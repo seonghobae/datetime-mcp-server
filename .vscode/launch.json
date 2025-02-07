@@ -1,0 +1,124 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File (debugpy)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "purpose": [
+                "debug-test"
+            ]
+        },
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python": "${workspaceFolder}/democracy-exe/.venv/bin/python3",
+            "preLaunchTask": "uv-sync"
+        },
+        {
+            "name": "Python: Debug Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "python": "${workspaceFolder}/democracy-exe/.venv/bin/python3",
+            "args": [
+                "-s",
+                "--verbose",
+                "--pdb",
+                "--pdbcls",
+                "bpdb:BPdb",
+                "--showlocals",
+                "--tb=short",
+                "${file}"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "purpose": [
+                "debug-test"
+            ],
+            "preLaunchTask": "uv-sync",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            //     "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Python: Run Tests with Coverage",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "python": "${workspaceFolder}/democracy-exe/.venv/bin/python3",
+            "args": [
+                "--diff-width=60",
+                "--diff-symbols",
+                "--cov-append",
+                "--cov-report=term-missing",
+                "--junitxml=junit/test-results.xml",
+                "--cov-report=xml:cov.xml",
+                "--cov-report=html:htmlcov",
+                "--cov-report=annotate:cov_annotate",
+                "--cov=.",
+                "${file}"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "preLaunchTask": "uv-sync",
+            //     "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Python: Run All Tests with Coverage",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "python": "${workspaceFolder}/democracy-exe/.venv/bin/python3",
+            "args": [
+                "--diff-width=60",
+                "--diff-symbols",
+                "--cov-append",
+                "--cov-report=term-missing",
+                "--junitxml=junit/test-results.xml",
+                "--cov-report=xml:cov.xml",
+                "--cov-report=html:htmlcov",
+                "--cov-report=annotate:cov_annotate",
+                "--cov=."
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "preLaunchTask": "uv-sync",
+            //     "envFile": "${workspaceFolder}/.env"
+        },
+        // SOURCE: https://github.com/esxr/langgraph-mcp/blob/main/.vscode/launch.json
+        {
+            "name": "LangGraph : Attach",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 2025
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "."
+                }
+            ],
+            "justMyCode": true
+        }
+    ]
+}

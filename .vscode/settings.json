@@ -1,0 +1,152 @@
+{
+    "editor.inlineSuggest.showToolbar": "onHover",
+    "editor.renderWhitespace": "all",
+    "python.analysis.packageIndexDepths": [
+        {
+            "name": "langchain",
+            "depth": 3,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "langgraph",
+            "depth": 3,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "langchain_core",
+            "depth": 3,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "langchain_community",
+            "depth": 3,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "discord",
+            "depth": 3,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "discord.ext.test",
+            "depth": 5,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "dpytest",
+            "depth": 5,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "gallery_dl",
+            "depth": 5,
+            "includeAllSymbols": true
+        },
+        {
+            "name": "loguru",
+            "depth": 5,
+            "includeAllSymbols": true
+        }
+    ],
+    "python.analysis.extraPaths": [
+        "."
+    ],
+    "python.analysis.completeFunctionParens": true,
+    "python.analysis.indexing": true,
+    "python.languageServer": "Pylance",
+    "python.analysis.importFormat": "absolute",
+    "python.analysis.stubPath": "${workspaceFolder}/typings",
+    "python.analysis.autoSearchPaths": true,
+    "editor.semanticHighlighting.enabled": true,
+    "pylint.args": [
+        "--enable=F,E,E1101",
+        "--disable=C0111,E0401,C,W",
+        "--max-line-length=120",
+    ],
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.inlayHints.variableTypes": true,
+    "python.analysis.inlayHints.functionReturnTypes": true,
+    "python.analysis.inlayHints.pytestParameters": true,
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportUnusedImport": "none",
+        "reportMissingImports": "error",
+        "reportImportCycles": "error",
+        "reportUnusedVariable": "none",
+        "reportMissingTypeStubs": "none",
+        "reportUnknownMemberType": "none",
+        "reportUnusedFunction": "warning",
+        "reportUnusedClass": "warning"
+    },
+    "notebook.formatOnSave.enabled": false,
+    "[python]": {
+        "editor.formatOnSave": false,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.tabSize": 4,
+        "editor.formatOnPaste": false,
+        "editor.formatOnType": false,
+    },
+    "[yaml]": {
+        "editor.tabSize": 2,
+        "editor.formatOnSave": false,
+        "editor.formatOnPaste": false,
+        "editor.formatOnType": false,
+    },
+    // SOURCE: https://code.visualstudio.com/docs/editor/profiles#_data-science-profile-template
+    "jupyter.widgetScriptSources": [
+        "unpkg.com",
+        "jsdelivr.com"
+    ],
+    "yaml.schemas": {
+        "https://json.schemastore.org/pre-commit-config.json": ".pre-commit-config.yaml",
+        "https://docs.sourcery.ai/resources/sourcery_yaml_schema.json": ".sourcery.yaml",
+        "https://raw.githubusercontent.com/DavidAnson/markdownlint/main/schema/markdownlint-config-schema.json": ".markdownlint.yaml",
+    },
+    "ruff.fixAll": true,
+    "ruff.path": [
+        "ruff"
+    ],
+    "ruff.importStrategy": "fromEnvironment",
+    "ruff.interpreter": [
+        "${workspaceFolder}/.venv/bin/python3"
+    ],
+    "evenBetterToml.schema.associations": {
+        "pyproject.toml": "https://json.schemastore.org/pyproject.json",
+    },
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "notebook.output.scrolling": true,
+    "jupyter.logging.level": "trace",
+    "jupyter.kernels.excludePythonEnvironments": [
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/pkgs/python-3.10.8-hf452327_0_cpython/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/pkgs/python-3.9.12-hbdb9e5c_1/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/pkgs/python-3.10.8-h3ba56d0_0_cpython/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/pkgs/python.app-3-py39h1a28f6b_0/pythonapp/Contents/MacOS/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/envs/flan-t5-xl3/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/envs/pytorch-lab3/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/envs/invokeai/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.05/envs/fastapi_pytorch_postgresql_sandbox3/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/pkgs/python.app-3-py310h1a28f6b_0/pythonapp/Contents/MacOS/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/pkgs/python-3.10.9-hc0d8a6c_1/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/pkgs/python-3.10.14-hb885b13_0/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.10/pkgs/python-3.9.13-hbdb9e5c_1/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.10/pkgs/python.app-3-py39h1a28f6b_0/pythonapp/Contents/MacOS/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2022.10/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/pkgs/python.app-3-py310h1a28f6b_0/pythonapp/Contents/MacOS/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/pkgs/python-3.10.9-hc0d8a6c_1/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/pkgs/python-3.10.14-hb885b13_0/bin/python",
+        "/Users/malcolm/.pyenv/versions/anaconda3-2023.03-1/bin/python",
+        "/Users/malcolm/.pyenv/versions/3.8.12/bin/python",
+    ],
+    "files.associations": {
+        "*.cursorrules": "markdown"
+    },
+    "json.schemas": [
+        {
+            "fileMatch": [
+                "langgraph.json"
+            ],
+            "url": "./hack/jsonschema/langgraph_schema.json"
+        }
+    ]
+}
