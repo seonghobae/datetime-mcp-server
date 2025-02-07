@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "A MCP server project"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [ "mcp>=1.2.1",]
+dependencies = [
+ "anthropic>=0.45.2",
+ "mcp[cli]>=1.2.1",
+ "python-dotenv>=1.0.1",
+]
 [[project.authors]]
 name = "Malcolm Jones"
 email = "bossjones@theblacktonystark.com"
