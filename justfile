@@ -73,3 +73,6 @@ setup-hooks:
 # Update all dependencies
 update-deps:
     uv pip compile --upgrade pyproject.toml -o uv.lock
+
+inspect:
+    npx @modelcontextprotocol/inspector uv --directory /Users/malcolm/dev/bossjones/datetime-mcp-server run datetime-mcp-server
