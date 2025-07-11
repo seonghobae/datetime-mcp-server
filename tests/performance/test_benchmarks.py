@@ -30,7 +30,7 @@ class TestDatetimeMCPPerformance:
 
         result = benchmark(run_list_tools)
         assert len(result) > 0
-        assert len(result) == 9  # Expected number of tools
+        assert len(result) == 10  # Expected number of tools
 
     @pytest.mark.benchmark
     def test_benchmark_list_resources(self, benchmark):
@@ -41,7 +41,9 @@ class TestDatetimeMCPPerformance:
 
         result = benchmark(run_list_resources)
         assert len(result) > 0
-        assert len(result) == 5  # Expected number of resources
+        assert (
+            len(result) >= 5
+        )  # At least 5 datetime resources (may include dynamic note resources)
 
     @pytest.mark.benchmark
     def test_benchmark_list_prompts(self, benchmark):
@@ -326,6 +328,7 @@ class TestPerformanceRegression:
         # configuration which will fail if performance degrades
 
     @pytest.mark.benchmark
+    @pytest.mark.timeout(120)  # 2 minute timeout for memory intensive tests
     def test_memory_usage_benchmark(self, benchmark):
         """Benchmark memory usage of datetime operations."""
         import psutil
@@ -366,6 +369,7 @@ class TestScalabilityBenchmarks:
     """Scalability and load testing benchmarks."""
 
     @pytest.mark.benchmark
+    @pytest.mark.timeout(180)  # 3 minute timeout for concurrent tests
     def test_concurrent_operations_simulation(self, benchmark):
         """Simulate concurrent operations to test scalability."""
 

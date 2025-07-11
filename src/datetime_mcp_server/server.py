@@ -3,7 +3,14 @@ import datetime
 import calendar
 import json
 import zoneinfo
+import signal
+import sys
+import psutil
+import os
+import threading
 from typing import Dict, List, Optional
+from collections import OrderedDict
+import time
 
 from mcp.server.models import InitializationOptions
 import mcp.types as types
@@ -11,10 +18,58 @@ from mcp.server import NotificationOptions, Server
 from pydantic import AnyUrl
 import mcp.server.stdio
 
+from .logging_config import setup_logging, get_logger, ServerHealthLogger
+
+# Initialize logging
+logger = get_logger("server")
+health_logger = ServerHealthLogger()
+
 # Store notes as a simple key-value dict to demonstrate state management
-notes: dict[str, str] = {}
+# Add size limit to prevent memory issues
+MAX_NOTES = 1000
+MAX_NOTE_SIZE = 10 * 1024  # 10KB per note
+
+# Thread-safe notes storage with proper synchronization
+notes_lock = threading.RLock()  # Reentrant lock for nested operations
+notes: OrderedDict[str, str] = OrderedDict()  # OrderedDict for proper FIFO behavior
 
 server = Server("datetime-mcp-server")
+
+# Thread-safe shutdown management
+shutdown_lock = threading.Lock()
+shutdown_requested = False
+
+# Server health metrics with thread safety
+health_metrics_lock = threading.Lock()
+health_metrics = {
+    "memory_warnings": 0,
+    "note_storage_warnings": 0,
+    "resource_cleanup_count": 0,
+    "error_recovery_count": 0,
+    "last_health_check": 0,
+}
+
+
+def set_shutdown_requested(value: bool) -> None:
+    """Thread-safe shutdown flag setter."""
+    global shutdown_requested
+    with shutdown_lock:
+        shutdown_requested = value
+
+
+def is_shutdown_requested() -> bool:
+    """Thread-safe shutdown flag getter."""
+    with shutdown_lock:
+        return shutdown_requested
+
+
+def update_health_metrics(metric: str, increment: int = 1) -> None:
+    """Thread-safe health metrics update."""
+    with health_metrics_lock:
+        if metric in health_metrics:
+            health_metrics[metric] += increment
+        # Use time.time() instead of asyncio.get_event_loop().time() for thread safety
+        health_metrics["last_health_check"] = time.time()
 
 
 @server.list_resources()
@@ -1007,6 +1062,25 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["start_date", "end_date"],
             },
         ),
+        types.Tool(
+            name="get-current-time",
+            description="Get the current time in various formats",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "format": {
+                        "type": "string",
+                        "enum": ["iso", "readable", "unix", "rfc3339"],
+                        "description": "Format to return the time in",
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "Optional timezone (default: local system timezone)",
+                    },
+                },
+                "required": ["format"],
+            },
+        ),
     ]
 
 
@@ -1015,7 +1089,7 @@ async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """
-    Handle tool execution requests.
+    Enhanced tool execution handler with comprehensive error handling and logging.
     Tools can modify server state and notify clients of changes.
 
     Args:
@@ -1029,32 +1103,103 @@ async def handle_call_tool(
     Raises:
         ValueError: If the tool name is unknown or arguments are invalid.
     """
+    # Log the tool call
+    start_time = asyncio.get_event_loop().time()
+    logger.debug(f"Tool call: {name} with args: {arguments}")
+
     if name == "add-note":
-        if not arguments:
-            raise ValueError("Missing arguments")
-
-        note_name = arguments.get("name")
-        content = arguments.get("content")
-
-        if not note_name or not content:
-            raise ValueError("Missing name or content")
-
-        # Update server state
-        notes[note_name] = content
-
-        # Notify clients that resources have changed - only if in a request context
         try:
-            await server.request_context.session.send_resource_list_changed()
-        except LookupError:
-            # Running outside of a request context (e.g., in tests)
-            pass
+            if not arguments:
+                raise ValueError("Missing arguments")
 
-        return [
-            types.TextContent(
-                type="text",
-                text=f"Added note '{note_name}' with content: {content}",
-            )
-        ]
+            note_name = arguments.get("name")
+            content = arguments.get("content")
+
+            if not note_name or not content:
+                raise ValueError("Missing name or content")
+
+            # Input validation
+            if not isinstance(note_name, str) or not isinstance(content, str):
+                raise ValueError("Name and content must be strings")
+
+            # Sanitize and validate note name
+            note_name = note_name.strip()
+            if not note_name:
+                raise ValueError("Note name cannot be empty or only whitespace")
+
+            if len(note_name) > 255:
+                raise ValueError("Note name too long (maximum 255 characters)")
+
+            # Check content size
+            content_size = len(content.encode("utf-8"))
+            if content_size > MAX_NOTE_SIZE:
+                raise ValueError(
+                    f"Note content too large ({content_size} bytes). Maximum size is {MAX_NOTE_SIZE} bytes ({MAX_NOTE_SIZE // 1024}KB)"
+                )
+
+            # Thread-safe note operations
+            with notes_lock:
+                # Check note count limit (thread-safe)
+                if note_name not in notes and len(notes) >= MAX_NOTES:
+                    # Remove oldest note if at limit (FIFO with OrderedDict)
+                    if notes:
+                        oldest_note, _ = notes.popitem(last=False)
+                        logger.warning(
+                            f"Note storage full, removed oldest note: '{oldest_note}'"
+                        )
+                        update_health_metrics("note_storage_warnings")
+
+                # Update server state
+                is_update = note_name in notes
+                notes[note_name] = content
+
+                # Move to end if updating (maintain access order)
+                if is_update:
+                    notes.move_to_end(note_name)
+
+            # Log the operation
+            action = "Updated" if is_update else "Added"
+            logger.info(f"{action} note '{note_name}' (size: {content_size} bytes)")
+
+            # Notify clients that resources have changed - only if in a request context
+            try:
+                await server.request_context.session.send_resource_list_changed()
+            except LookupError:
+                # Running outside of a request context (e.g., in tests)
+                logger.debug(
+                    "Resource list change notification skipped (no request context)"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send resource list change notification: {e}")
+
+            # Thread-safe note count access
+            with notes_lock:
+                note_count = len(notes)
+
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"{action} note '{note_name}' with {len(content)} characters. Total notes: {note_count}/{MAX_NOTES}",
+                )
+            ]
+
+        except ValueError as e:
+            logger.warning(f"Invalid add-note request: {e}")
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Error adding note: {str(e)}",
+                )
+            ]
+        except Exception as e:
+            logger.error(f"Unexpected error in add-note: {e}", exc_info=True)
+            update_health_metrics("error_recovery_count")
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Internal error while adding note: {str(e)}",
+                )
+            ]
 
     elif name == "get-note":
         if not arguments:
@@ -1065,28 +1210,36 @@ async def handle_call_tool(
         if not note_name:
             raise ValueError("Missing name argument")
 
-        if note_name in notes:
-            return [
-                types.TextContent(
-                    type="text",
-                    text=notes[note_name],
-                )
-            ]
-        else:
-            return [
-                types.TextContent(
-                    type="text",
-                    text=f"Note '{note_name}' not found",
-                )
-            ]
+        # Thread-safe note access
+        with notes_lock:
+            if note_name in notes:
+                note_content = notes[note_name]
+                # Update access order
+                notes.move_to_end(note_name)
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=note_content,
+                    )
+                ]
+            else:
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"Note '{note_name}' not found",
+                    )
+                ]
 
     elif name == "list-notes":
-        if not notes:
-            return [types.TextContent(type="text", text=json.dumps([], indent=2))]
+        # Thread-safe note listing
+        with notes_lock:
+            if not notes:
+                return [types.TextContent(type="text", text=json.dumps([], indent=2))]
 
-        note_list = [
-            {"name": name, "content": content} for name, content in notes.items()
-        ]
+            note_list = [
+                {"name": name, "content": content} for name, content in notes.items()
+            ]
+
         return [types.TextContent(type="text", text=json.dumps(note_list, indent=2))]
 
     elif name == "delete-note":
@@ -1098,9 +1251,15 @@ async def handle_call_tool(
         if not note_name:
             raise ValueError("Missing name argument")
 
-        if note_name in notes:
-            del notes[note_name]
+        # Thread-safe note deletion
+        with notes_lock:
+            if note_name in notes:
+                del notes[note_name]
+                note_found = True
+            else:
+                note_found = False
 
+        if note_found:
             # Notify clients that resources have changed - only if in a request context
             try:
                 await server.request_context.session.send_resource_list_changed()
@@ -1188,6 +1347,67 @@ async def handle_call_tool(
                     type="text", text=f"Error formatting datetime: {str(e)}"
                 )
             ]
+
+    elif name == "get-current-time":
+        if not arguments:
+            raise ValueError("Missing arguments")
+
+        time_format = arguments.get("format")
+        timezone_str = arguments.get("timezone")
+
+        if not time_format:
+            raise ValueError("Missing format argument")
+
+        # Handle timezone if provided, otherwise use system timezone
+        if timezone_str:
+            try:
+                # Try using zoneinfo first (Python 3.9+)
+                tz = zoneinfo.ZoneInfo(timezone_str)
+                now = datetime.datetime.now(tz)
+            except zoneinfo.ZoneInfoNotFoundError:
+                try:
+                    # Fallback to pytz if available
+                    import pytz
+
+                    tz = pytz.timezone(timezone_str)
+                    now = datetime.datetime.now(tz)
+                except ImportError:
+                    return [
+                        types.TextContent(
+                            type="text",
+                            text="The pytz library is not available. Using system timezone instead.",
+                        ),
+                        types.TextContent(
+                            type="text",
+                            text=format_time(datetime.datetime.now(), time_format),
+                        ),
+                    ]
+                except Exception as e:
+                    return [
+                        types.TextContent(
+                            type="text",
+                            text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead.",
+                        ),
+                        types.TextContent(
+                            type="text",
+                            text=format_time(datetime.datetime.now(), time_format),
+                        ),
+                    ]
+            except Exception as e:
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead.",
+                    ),
+                    types.TextContent(
+                        type="text",
+                        text=format_time(datetime.datetime.now(), time_format),
+                    ),
+                ]
+        else:
+            now = datetime.datetime.now()
+
+        return [types.TextContent(type="text", text=format_time(now, time_format))]
 
     elif name == "format-date":
         if not arguments:
@@ -1349,7 +1569,19 @@ async def handle_call_tool(
                 )
             ]
 
-    raise ValueError(f"Unknown tool: {name}")
+    # Log execution time for successful tools
+    execution_time = (asyncio.get_event_loop().time() - start_time) * 1000
+
+    # Handle unknown tool
+    logger.warning(f"Unknown tool requested: '{name}' with args: {arguments}")
+    logger.debug(f"Tool call failed after {execution_time:.2f}ms")
+
+    return [
+        types.TextContent(
+            type="text",
+            text=f"Error: Unknown tool '{name}'. Available tools can be listed using the tools/list method.",
+        )
+    ]
 
 
 def add_months(dt: datetime.datetime, months: int) -> datetime.datetime:
@@ -1630,26 +1862,220 @@ def format_time(dt: datetime.datetime, format_type: str) -> str:
         )
 
 
+def setup_signal_handlers():
+    """Set up signal handlers for graceful shutdown with thread safety."""
+
+    def signal_handler(signum, frame):
+        signal_name = signal.Signals(signum).name
+        logger.info(
+            f"Received signal {signal_name} ({signum}), initiating graceful shutdown"
+        )
+        health_logger.log_shutdown(f"signal_{signal_name.lower()}")
+
+        # Thread-safe shutdown flag setting
+        set_shutdown_requested(True)
+
+    # Handle common termination signals
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # Termination request
+
+    logger.debug("Signal handlers installed")
+
+
+async def monitor_resources():
+    """Enhanced background task to monitor server resource usage with better error recovery."""
+    process = psutil.Process(os.getpid())
+    consecutive_errors = 0
+    max_consecutive_errors = 5
+    base_sleep_interval = 30
+    error_sleep_interval = 60
+
+    while not is_shutdown_requested():
+        try:
+            # Get memory usage
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / 1024 / 1024
+
+            # Thread-safe note count access
+            with notes_lock:
+                current_note_count = len(notes)
+
+            # Log memory usage every 5 minutes and if it's high
+            if memory_mb > 100:  # Log if memory usage > 100MB
+                health_logger.log_memory_usage(memory_mb, current_note_count)
+                logger.warning(f"High memory usage detected: {memory_mb:.1f}MB")
+                update_health_metrics("memory_warnings")
+
+            # Check note storage limits
+            if current_note_count >= MAX_NOTES:
+                logger.warning(
+                    f"Notes storage limit reached: {current_note_count}/{MAX_NOTES}"
+                )
+                update_health_metrics("note_storage_warnings")
+
+            # Check health metrics
+            with health_metrics_lock:
+                if health_metrics["memory_warnings"] > 10:
+                    logger.critical(
+                        f"Excessive memory warnings: {health_metrics['memory_warnings']}"
+                    )
+
+            # Reset consecutive error count on success
+            consecutive_errors = 0
+
+            # Sleep for normal interval
+            await asyncio.sleep(base_sleep_interval)
+
+        except Exception as e:
+            consecutive_errors += 1
+            update_health_metrics("error_recovery_count")
+
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(
+                    f"Resource monitoring failed {consecutive_errors} consecutive times, potential system instability"
+                )
+                # Still continue monitoring but with longer intervals
+                await asyncio.sleep(error_sleep_interval * 2)
+            else:
+                logger.error(
+                    f"Error in resource monitoring (attempt {consecutive_errors}/{max_consecutive_errors}): {e}"
+                )
+                await asyncio.sleep(error_sleep_interval)
+
+
+async def cleanup_resources():
+    """Enhanced clean up resources before shutdown with error handling."""
+    logger.info("Starting resource cleanup")
+
+    try:
+        # Thread-safe notes cleanup
+        with notes_lock:
+            if len(notes) > 0:
+                notes_count = len(notes)
+                logger.info(f"Clearing {notes_count} notes from memory")
+                notes.clear()
+                update_health_metrics("resource_cleanup_count")
+
+        # Log final health metrics
+        with health_metrics_lock:
+            logger.info(f"Final health metrics: {health_metrics}")
+
+        logger.info("Resource cleanup completed")
+
+    except Exception as e:
+        logger.error(f"Error during resource cleanup: {e}")
+        # Continue cleanup despite errors
+
+
 async def main():
     """
-    Main entry point for the MCP server.
-    Sets up and runs the server using stdin/stdout streams.
+    Enhanced main entry point for the MCP server with comprehensive error handling,
+    logging, monitoring, and graceful shutdown capabilities.
     """
-    # Run the server using stdin/stdout streams
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
+    global shutdown_requested
+
+    # Initialize logging with environment variables or defaults
+    log_level = os.getenv("LOG_LEVEL", "INFO")
+    log_file = os.getenv("LOG_FILE")  # Optional log file
+    structured_logging = os.getenv("STRUCTURED_LOGGING", "false").lower() == "true"
+
+    try:
+        # Set up logging
+        setup_logging(level=log_level, log_file=log_file, structured=structured_logging)
+
+        # Log startup
+        logger.info("Starting Datetime MCP Server")
+        health_logger.log_startup(
+            "stdio",
+            {
+                "log_level": log_level,
+                "log_file": log_file,
+                "structured_logging": structured_logging,
+                "max_notes": MAX_NOTES,
+                "max_note_size_kb": MAX_NOTE_SIZE // 1024,
+            },
+        )
+
+        # Set up signal handlers for graceful shutdown
+        setup_signal_handlers()
+
+        # Start resource monitoring task
+        monitor_task = asyncio.create_task(monitor_resources())
+
+        logger.info("Initializing MCP server with stdio transport")
+
+        # Run the server with comprehensive error handling
+        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+            logger.info("STDIO streams established, starting server")
+
+            # Configure server initialization options
+            init_options = InitializationOptions(
                 server_name="datetime-mcp-server",
                 server_version="0.1.0",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},
                 ),
-            ),
-        )
+            )
+
+            logger.debug(f"Server capabilities: {init_options.capabilities}")
+
+            try:
+                # Start the main server
+                logger.info("MCP server started successfully")
+                await server.run(read_stream, write_stream, init_options)
+
+            except asyncio.CancelledError:
+                logger.info("Server run cancelled")
+                raise
+            except ConnectionError as e:
+                logger.error(f"Connection error in server: {e}")
+                health_logger.log_error(e, "server_connection")
+                raise
+            except BrokenPipeError as e:
+                logger.warning(f"Client disconnected (broken pipe): {e}")
+                # This is often normal when client disconnects
+            except EOFError as e:
+                logger.info(f"Client closed connection (EOF): {e}")
+                # This is normal when client closes cleanly
+            except Exception as e:
+                logger.error(f"Unexpected error in server run: {e}")
+                health_logger.log_error(e, "server_run")
+                raise
+
+    except KeyboardInterrupt:
+        logger.info("Server interrupted by user (Ctrl+C)")
+        health_logger.log_shutdown("keyboard_interrupt")
+    except Exception as e:
+        logger.error(f"Fatal error in main: {e}", exc_info=True)
+        health_logger.log_error(e, "main_function")
+        sys.exit(1)
+    finally:
+        # Ensure cleanup happens
+        set_shutdown_requested(True)
+
+        # Cancel monitoring task
+        if "monitor_task" in locals() and not monitor_task.done():
+            logger.debug("Cancelling resource monitoring task")
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        # Clean up resources
+        await cleanup_resources()
+
+        logger.info("Datetime MCP Server shutdown completed")
+        health_logger.log_shutdown("normal", 0)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nServer interrupted", file=sys.stderr)
+        sys.exit(0)
+    except Exception as e:
+        print(f"Failed to start server: {e}", file=sys.stderr)
+        sys.exit(1)

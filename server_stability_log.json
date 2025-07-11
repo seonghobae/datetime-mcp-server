@@ -1,0 +1,81 @@
+{
+  "monitoring_session": {
+    "start_time": "2025-07-11T21:43:49.845217",
+    "duration_seconds": 37.017208099365234,
+    "total_samples": 6
+  },
+  "metrics": [
+    {
+      "timestamp": "2025-07-11T21:43:51.849455",
+      "uptime_seconds": 2.0042409896850586,
+      "memory_rss_mb": 16.703125,
+      "memory_vms_mb": 400546.09375,
+      "memory_percent": 0.10194778442382812,
+      "cpu_percent": 0.0,
+      "num_file_descriptors": 9,
+      "num_threads": 3,
+      "process_status": "running",
+      "is_running": true
+    },
+    {
+      "timestamp": "2025-07-11T21:43:56.851652",
+      "uptime_seconds": 7.0064709186553955,
+      "memory_rss_mb": 15.453125,
+      "memory_vms_mb": 400546.09375,
+      "memory_percent": 0.09431838989257812,
+      "cpu_percent": 0.0,
+      "num_file_descriptors": 9,
+      "num_threads": 3,
+      "process_status": "running",
+      "is_running": true
+    },
+    {
+      "timestamp": "2025-07-11T21:44:01.852940",
+      "uptime_seconds": 12.007730960845947,
+      "memory_rss_mb": 13.671875,
+      "memory_vms_mb": 400541.59375,
+      "memory_percent": 0.08344650268554688,
+      "cpu_percent": 0.0,
+      "num_file_descriptors": 9,
+      "num_threads": 2,
+      "process_status": "running",
+      "is_running": true
+    },
+    {
+      "timestamp": "2025-07-11T21:44:06.854716",
+      "uptime_seconds": 17.00950813293457,
+      "memory_rss_mb": 13.671875,
+      "memory_vms_mb": 400541.59375,
+      "memory_percent": 0.08344650268554688,
+      "cpu_percent": 0.0,
+      "num_file_descriptors": 9,
+      "num_threads": 2,
+      "process_status": "running",
+      "is_running": true
+    },
+    {
+      "timestamp": "2025-07-11T21:44:11.856479",
+      "uptime_seconds": 22.01127815246582,
+      "memory_rss_mb": 13.671875,
+      "memory_vms_mb": 400541.59375,
+      "memory_percent": 0.08344650268554688,
+      "cpu_percent": 0.0,
+      "num_file_descriptors": 9,
+      "num_threads": 2,
+      "process_status": "running",
+      "is_running": true
+    },
+    {
+      "timestamp": "2025-07-11T21:44:16.857664",
+      "uptime_seconds": 27.01245403289795,
+      "memory_rss_mb": 12.78125,
+      "memory_vms_mb": 400541.59375,
+      "memory_percent": 0.07801055908203125,
+      "cpu_percent": 0.0,
+      "num_file_descriptors": 9,
+      "num_threads": 2,
+      "process_status": "running",
+      "is_running": true
+    }
+  ]
+}

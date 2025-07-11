@@ -59,13 +59,15 @@ dev = [
 ]
 
 [project.scripts]
-datetime-mcp-server = "datetime_mcp_server.main:main"
+datetime-mcp-server = "datetime_mcp_server:main"
 
 [tool.pytest.ini_options]
 markers = [
     "benchmark: marks tests as benchmark tests",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests"
+    "integration: marks tests as integration tests",
+    "sse: marks tests as server-sent events tests",
+    "http: marks tests as HTTP transport tests"
 ]
 # Performance benchmarking configuration
 addopts = [
@@ -77,10 +79,15 @@ addopts = [
     "--benchmark-max-time=0.050",
     "--benchmark-min-rounds=5",
     "--benchmark-json=benchmark_results.json",
-    # Timeout settings to prevent infinite waiting
-    "--timeout=300",  # 5 minutes for individual tests
-    "--timeout-method=thread"  # Use thread-based timeout for better compatibility
+    # Timeout settings optimized for different test types
+    "--timeout=60",  # Default 1 minute for regular tests
+    "--timeout-method=thread",  # Use thread-based timeout for better compatibility
+    "-v"  # Verbose output for better debugging
 ]
-# Global timeout settings
-timeout = 300  # 5 minutes per test
+# Global timeout settings with specific overrides
+timeout = 60  # Default 1 minute per test (reduced from 5 minutes)
 timeout_method = "thread"  # Use thread timeout method
+
+# Test collection and execution optimization
+asyncio_mode = "auto"  # Automatic asyncio mode detection
+asyncio_default_fixture_loop_scope = "function"  # Function-scoped event loops
