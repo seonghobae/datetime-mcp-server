@@ -1,0 +1,6 @@
+{
+  "uid": "WHCF",
+  "name": "LLM 모델은 오늘, 어제, 한 달 전과 같이 말하면 기준이 되는 '오늘' 날짜를 모르기 ...",
+  "description": "LLM 모델은 오늘, 어제, 한 달 전과 같이 말하면 기준이 되는 '오늘' 날짜를 모르기 때문에, 날짜 관련 언급이 나타나면 Datetime을 나타내주는 Model Context Protocol Application Server App (Dockerize 가능한 형태). 기존의 https://github.com/bossjones/datetime-mcp-server 을 fork한 https://github.com/seonghobae/datetime-mcp-server 에서 작업해서 https://github.com/bossjones/datetime-mcp-server 에 merge 하는 걸 목표로 한다. 텍스트 컨텐츠에 기준 날짜가 있다면, 그를 토대로 '어제' '한 달 후', '한 달 전', '1년 전'과 같은 텍스트를 인식할 수 있게 한다.",
+  "connectedAt": "2025-07-11T09:26:47.418Z"
+}

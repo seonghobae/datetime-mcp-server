@@ -1,0 +1,121 @@
+version: 2
+updates:
+  # Python dependencies (pyproject.toml and uv.lock)
+  - package-ecosystem: "uv"  # Changed from "pip" to "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    # Target the main development branch (auto-fallback supported by GitHub)
+    target-branch: "develop"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "@github/datetime-mcp-maintainers"
+    assignees:
+      - "@github/datetime-mcp-maintainers"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+      - "uv"  # Added UV-specific label
+      - "auto-update"
+    # Group related updates for UV ecosystem
+    groups:
+      test-dependencies:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+          - "*test*"
+          - "bandit*"
+          - "safety*"
+      lint-dependencies:
+        patterns:
+          - "ruff*"
+          - "pyright*"
+          - "mypy*"
+          - "black*"
+          - "isort*"
+      build-dependencies:
+        patterns:
+          - "build*"
+          - "setuptools*"
+          - "wheel*"
+          - "twine*"
+      server-dependencies:
+        patterns:
+          - "fastapi*"
+          - "hypercorn*"  # Updated for UV
+          - "uvicorn*"
+          - "starlette*"
+          - "pydantic*"
+    # UV-specific ignore patterns
+    ignore:
+      - dependency-name: "python"
+        # Don't auto-update Python version
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+    target-branch: "develop"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "@github/datetime-mcp-maintainers"
+    assignees:
+      - "@github/datetime-mcp-maintainers"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "auto-update"
+    # Group GitHub Actions updates
+    groups:
+      actions-core:
+        patterns:
+          - "actions/*"
+      docker-actions:
+        patterns:
+          - "docker/*"
+      security-actions:
+        patterns:
+          - "*security*"
+          - "*scan*"
+          - "codecov/*"
+
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday" 
+      time: "09:00"
+    target-branch: "develop"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "@github/datetime-mcp-maintainers"
+    assignees:
+      - "@github/datetime-mcp-maintainers"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "auto-update"
+    # Group Docker base image updates
+    groups:
+      base-images:
+        patterns:
+          - "python*"
+          - "alpine*"
+          - "ubuntu*" 

@@ -1,0 +1,104 @@
+services:
+  datetime-mcp-server-stdio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: datetime-mcp-server:production
+    container_name: datetime-mcp-server-stdio
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TRANSPORT_MODE=stdio
+      - LOG_LEVEL=INFO
+    volumes:
+      # Optional: Mount for development
+      - ./src:/app/src:ro
+    healthcheck:
+      test: ["CMD", "python", "/app/health_check.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mcp-network
+
+  datetime-mcp-server-http:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: datetime-mcp-server:production
+    container_name: datetime-mcp-server-http
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TRANSPORT_MODE=http
+      - HTTP_HOST=0.0.0.0
+      - HTTP_PORT=8000
+      - LOG_LEVEL=INFO
+    volumes:
+      # Optional: Mount for development
+      - ./src:/app/src:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mcp-network
+    command: ["python", "-m", "datetime_mcp_server.main", "--transport", "http"]
+
+  # Development service with hot reload
+  datetime-mcp-server-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: datetime-mcp-server:dev
+    container_name: datetime-mcp-server-dev
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app/src
+    working_dir: /app
+    command: ["python", "-m", "datetime_mcp_server.server"]
+    profiles:
+      - dev
+    networks:
+      - mcp-network
+
+  # Test runner service
+  datetime-mcp-server-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: datetime-mcp-server:test
+    container_name: datetime-mcp-server-test
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/src
+    working_dir: /app
+    command: ["uv", "run", "pytest", "tests/", "-v"]
+    profiles:
+      - test
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge 

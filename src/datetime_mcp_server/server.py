@@ -1,6 +1,9 @@
 import asyncio
 import datetime
-from typing import Dict, List, Optional, Any, Union
+import calendar
+import json
+import zoneinfo
+from typing import Dict, List, Optional
 
 from mcp.server.models import InitializationOptions
 import mcp.types as types
@@ -12,6 +15,7 @@ import mcp.server.stdio
 notes: dict[str, str] = {}
 
 server = Server("datetime-mcp-server")
+
 
 @server.list_resources()
 async def handle_list_resources() -> list[types.Resource]:
@@ -51,10 +55,23 @@ async def handle_list_resources() -> list[types.Resource]:
             name="Current Time",
             description="The current time in 24-hour format",
             mimeType="text/plain",
-        )
+        ),
+        types.Resource(
+            uri=AnyUrl("datetime://timezone-info"),
+            name="Timezone Information",
+            description="Current timezone information including UTC offset and DST status",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri=AnyUrl("datetime://supported-timezones"),
+            name="Supported Timezones",
+            description="List of all supported timezone identifiers grouped by region",
+            mimeType="application/json",
+        ),
     ]
 
     return note_resources + datetime_resources
+
 
 @server.read_resource()
 async def handle_read_resource(uri: AnyUrl) -> str:
@@ -95,10 +112,102 @@ async def handle_read_resource(uri: AnyUrl) -> str:
             return now.strftime("%Y-%m-%d")
         elif path == "time":
             return now.strftime("%H:%M:%S")
+        elif path == "timezone-info":
+            # Get current timezone information
+            current_tz = now.astimezone().tzinfo
+
+            # Calculate UTC offset
+            utc_offset = now.astimezone().utcoffset()
+            utc_offset_str = (
+                f"{utc_offset.total_seconds() / 3600:+.1f}" if utc_offset else "+0.0"
+            )
+
+            # Check DST status
+            dst_offset = now.astimezone().dst()
+            is_dst = dst_offset is not None and dst_offset.total_seconds() > 0
+
+            # Get timezone name
+            tz_name = str(current_tz) if current_tz else "Local"
+
+            timezone_info = {
+                "timezone_name": tz_name,
+                "utc_offset_hours": utc_offset_str,
+                "is_dst": is_dst,
+                "current_time": now.astimezone().isoformat(),
+                "utc_time": now.utctimetuple(),
+                "dst_offset_seconds": int(dst_offset.total_seconds())
+                if dst_offset
+                else 0,
+            }
+
+            return json.dumps(timezone_info, indent=2, default=str)
+        elif path == "supported-timezones":
+            # Get all available timezones
+            try:
+                all_timezones = sorted(zoneinfo.available_timezones())
+            except Exception:
+                # Fallback in case zoneinfo is not available
+                all_timezones = [
+                    "UTC",
+                    "America/New_York",
+                    "Europe/London",
+                    "Asia/Tokyo",
+                ]
+
+            # Group timezones by region
+            timezone_groups = {}
+            for tz_name in all_timezones:
+                parts = tz_name.split("/")
+                if len(parts) >= 2:
+                    region = parts[0]
+                    if region not in timezone_groups:
+                        timezone_groups[region] = []
+
+                    # Get current offset for this timezone
+                    try:
+                        tz = zoneinfo.ZoneInfo(tz_name)
+                        tz_now = datetime.datetime.now(tz)
+                        offset = tz_now.utcoffset()
+                        offset_str = (
+                            f"{offset.total_seconds() / 3600:+.1f}"
+                            if offset
+                            else "+0.0"
+                        )
+
+                        timezone_groups[region].append(
+                            {
+                                "name": tz_name,
+                                "display_name": parts[-1].replace("_", " "),
+                                "current_offset": offset_str,
+                            }
+                        )
+                    except Exception:
+                        # Skip invalid timezones
+                        continue
+                else:
+                    # Handle single-part timezone names (like UTC)
+                    if "Other" not in timezone_groups:
+                        timezone_groups["Other"] = []
+                    timezone_groups["Other"].append(
+                        {
+                            "name": tz_name,
+                            "display_name": tz_name,
+                            "current_offset": "+0.0" if tz_name == "UTC" else "Unknown",
+                        }
+                    )
+
+            timezone_data = {
+                "total_timezones": len(all_timezones),
+                "regions": timezone_groups,
+                "generated_at": datetime.datetime.now().isoformat(),
+            }
+
+            return json.dumps(timezone_data, indent=2)
         else:
             raise ValueError(f"Unknown datetime resource: {path}")
 
     raise ValueError(f"Unsupported URI scheme: {uri.scheme}")
+
 
 @server.list_prompts()
 async def handle_list_prompts() -> list[types.Prompt]:
@@ -134,10 +243,44 @@ async def handle_list_prompts() -> list[types.Prompt]:
                     name="time",
                     description="Time for the event (HH:MM format)",
                     required=True,
+                ),
+            ],
+        ),
+        types.Prompt(
+            name="datetime-calculation-guide",
+            description="Provides examples and guidance on when and how to use date calculation tools",
+            arguments=[
+                types.PromptArgument(
+                    name="scenario",
+                    description="Specific scenario or use case (optional)",
+                    required=False,
                 )
-            ]
-        )
+            ],
+        ),
+        types.Prompt(
+            name="business-day-rules",
+            description="Explains business day calculation rules, weekend patterns, and holiday handling",
+            arguments=[
+                types.PromptArgument(
+                    name="region",
+                    description="Specific region or country for business day rules (optional)",
+                    required=False,
+                )
+            ],
+        ),
+        types.Prompt(
+            name="timezone-best-practices",
+            description="Guidelines for timezone-aware date operations and common pitfalls to avoid",
+            arguments=[
+                types.PromptArgument(
+                    name="operation_type",
+                    description="Type of operation (calculation/formatting/storage/comparison)",
+                    required=False,
+                )
+            ],
+        ),
     ]
+
 
 @server.get_prompt()
 async def handle_get_prompt(
@@ -169,8 +312,7 @@ async def handle_get_prompt(
                         type="text",
                         text=f"Here are the current notes to summarize:{detail_prompt}\n\n"
                         + "\n".join(
-                            f"- {name}: {content}"
-                            for name, content in notes.items()
+                            f"- {name}: {content}" for name, content in notes.items()
                         ),
                     ),
                 )
@@ -197,14 +339,473 @@ async def handle_get_prompt(
                     content=types.TextContent(
                         type="text",
                         text=f"Please schedule an event named '{event}' for today ({formatted_date}) at {time}. "
-                             f"The current time is {now.strftime('%H:%M')}. "
-                             f"Suggest an appropriate reminder time before the event.",
+                        f"The current time is {now.strftime('%H:%M')}. "
+                        f"Suggest an appropriate reminder time before the event.",
+                    ),
+                )
+            ],
+        )
+
+    elif name == "datetime-calculation-guide":
+        scenario = (arguments or {}).get("scenario", "general")
+
+        guide_content = f"""# DateTime Calculation Tools Guide
+
+## Available Tools
+
+### 1. get-current-datetime
+**Purpose**: Get current date/time in various formats
+**Use when**: You need the current timestamp as a reference point
+
+**Examples**:
+```
+get-current-datetime(format="iso") → "2024-07-15T14:30:00"
+get-current-datetime(format="json", timezone="UTC") → Full JSON with multiple formats
+get-current-datetime(format="custom", custom_format="%A, %B %d, %Y") → "Monday, July 15, 2024"
+```
+
+### 2. calculate-date
+**Purpose**: Add/subtract time from a date
+**Use when**: You need "X days/weeks/months/years from/before a date"
+
+**Examples**:
+```
+calculate-date(base_date="2024-07-15", operation="add", amount=30, unit="days") → "2024-08-14"
+calculate-date(base_date="2024-07-15", operation="subtract", amount=3, unit="months") → "2024-04-15"
+```
+
+### 3. calculate-date-range
+**Purpose**: Calculate start/end dates for periods
+**Use when**: You need "last 3 months" or "next 2 weeks" ranges
+
+**Examples**:
+```
+calculate-date-range(base_date="2024-07-15", direction="last", amount=3, unit="months")
+→ {{"start": "2024-04-15", "end": "2024-07-15"}}
+
+calculate-date-range(base_date="2024-07-15", direction="next", amount=2, unit="weeks")
+→ {{"start": "2024-07-15", "end": "2024-07-29"}}
+```
+
+### 4. calculate-business-days
+**Purpose**: Count business days between dates
+**Use when**: You need workday calculations excluding weekends/holidays
+
+**Examples**:
+```
+calculate-business-days(start_date="2024-12-20", end_date="2024-12-31", holidays=["2024-12-25"])
+→ {{"business_days": 7}}
+```
+
+### 5. format-date
+**Purpose**: Convert dates between formats
+**Use when**: You need to display dates in specific formats
+
+**Examples**:
+```
+format-date(date="2024-07-15", format="%B %d, %Y") → "July 15, 2024"
+format-date(date="2024-07-15T14:30:00", format="%Y/%m/%d %H:%M") → "2024/07/15 14:30"
+```
+
+## Common Scenarios{f" - {scenario.title()}" if scenario != "general" else ""}
+
+**Scenario: Calculating Deadlines**
+1. Use get-current-datetime to get today's date
+2. Use calculate-date to add the deadline period
+3. Use calculate-business-days if only workdays count
+
+**Scenario: Generating Reports for "Last Quarter"**
+1. Use get-current-datetime to get current date
+2. Use calculate-date-range with "last", 3, "months"
+3. Use the returned start/end dates for your query
+
+**Scenario: Project Timeline Planning**
+1. Use calculate-date for milestone dates
+2. Use calculate-business-days for duration estimates
+3. Use format-date for user-friendly displays
+
+## Important Notes
+- All dates use ISO format (YYYY-MM-DD) by default
+- Always specify timezone for accurate calculations
+- Use calculate-business-days for work-related deadlines
+- Combine tools for complex calculations (e.g., "next business day after adding 2 weeks")
+"""
+
+        return types.GetPromptResult(
+            description="Guide for using datetime calculation tools effectively",
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=guide_content,
+                    ),
+                )
+            ],
+        )
+
+    elif name == "business-day-rules":
+        region = (arguments or {}).get("region", "standard")
+
+        rules_content = f"""# Business Day Calculation Rules
+
+## Standard Business Day Definition
+- **Business Days**: Monday through Friday (weekdays)
+- **Non-Business Days**: Saturday, Sunday, and specified holidays
+- **Calculation Method**: Inclusive of both start and end dates
+
+## Weekend Patterns{f" - {region.title()}" if region != "standard" else ""}
+
+### Standard Pattern (Most Countries)
+- **Weekends**: Saturday (day 5) and Sunday (day 6)
+- **Business Week**: Monday (0) to Friday (4)
+
+### Regional Variations
+- **Middle East**: Friday-Saturday weekends in some countries
+- **Israel**: Friday-Saturday weekends
+- **Some Asian Countries**: Different weekend patterns
+
+## Holiday Handling
+
+### How Holidays Work
+1. **Fixed Holidays**: Same date every year (e.g., "2024-12-25" for Christmas)
+2. **Floating Holidays**: Different dates each year (handle manually)
+3. **Regional Holidays**: Vary by country/region
+
+### Holiday Array Format
+```python
+holidays = [
+    "2024-12-25",  # Christmas Day
+    "2024-01-01",  # New Year's Day
+    "2024-07-04",  # Independence Day (US)
+]
+```
+
+## Business Day Calculation Examples
+
+### Basic Calculation
+```
+calculate-business-days(
+    start_date="2024-12-20",  # Friday
+    end_date="2024-12-31",    # Tuesday
+    holidays=["2024-12-25"]   # Christmas
+)
+→ Result: 7 business days
+```
+
+**Breakdown**:
+- Dec 20 (Fri): ✓ Business day
+- Dec 21-22 (Sat-Sun): ❌ Weekend  
+- Dec 23-24 (Mon-Tue): ✓ Business days (2)
+- Dec 25 (Wed): ❌ Holiday
+- Dec 26-27 (Thu-Fri): ✓ Business days (2)
+- Dec 28-29 (Sat-Sun): ❌ Weekend
+- Dec 30-31 (Mon-Tue): ✓ Business days (2)
+- **Total**: 1 + 2 + 2 + 2 = 7 business days
+
+### Edge Cases
+
+**Same Day Calculation**
+```
+calculate-business-days("2024-07-15", "2024-07-15")  # Monday
+→ Result: 1 business day (if no holidays)
+```
+
+**Weekend Start/End**
+```
+calculate-business-days("2024-07-13", "2024-07-14")  # Sat-Sun
+→ Result: 0 business days
+```
+
+**Holiday on Weekend**
+- If a holiday falls on a weekend, it doesn't affect business day count
+- Some organizations observe the holiday on the following Monday
+
+## Best Practices
+
+### 1. Always Specify Holidays
+```python
+# Good
+holidays = ["2024-12-25", "2024-01-01"]
+result = calculate-business-days(start, end, holidays)
+
+# Avoid - missing holidays
+result = calculate-business-days(start, end)  # No holidays considered
+```
+
+### 2. Use Consistent Date Formats
+```python
+# Good - ISO format
+start_date = "2024-07-15"
+end_date = "2024-07-30"
+
+# Avoid - mixed formats
+start_date = "07/15/2024"  # MM/DD/YYYY
+end_date = "2024-07-30"    # ISO format
+```
+
+### 3. Consider Timezone for Multi-day Calculations
+```python
+# Good - specify timezone for clarity
+calculate-business-days(
+    start_date="2024-07-15",
+    end_date="2024-07-30",
+    timezone="America/New_York"
+)
+```
+
+### 4. Validate Date Order
+- Ensure start_date ≤ end_date
+- The tool will raise an error for invalid date ranges
+
+## Common Use Cases
+
+**Project Duration Estimation**
+- Calculate working days between project start and deadline
+- Account for company holidays and vacation periods
+
+**SLA Compliance**
+- Calculate response times in business days only
+- Exclude weekends and holidays from SLA calculations
+
+**Payroll Processing**
+- Determine working days in a pay period
+- Calculate overtime based on business day schedules
+
+**Delivery Scheduling**
+- Estimate delivery dates excluding non-business days
+- Plan shipments around holiday periods
+"""
+
+        return types.GetPromptResult(
+            description="Business day calculation rules and best practices",
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=rules_content,
+                    ),
+                )
+            ],
+        )
+
+    elif name == "timezone-best-practices":
+        operation_type = (arguments or {}).get("operation_type", "general")
+
+        practices_content = f"""# Timezone Best Practices for Date Operations
+
+## Core Principles
+
+### 1. Always Be Explicit About Timezones
+- **Never assume**: Always specify timezone when it matters
+- **Use IANA identifiers**: "America/New_York", not "EST"
+- **UTC for storage**: Store dates in UTC, display in local timezone
+
+### 2. Understand Timezone vs UTC Offset
+- **Timezone**: "America/New_York" (handles DST automatically)
+- **UTC Offset**: "+05:00" (fixed offset, doesn't handle DST)
+
+## Operation-Specific Guidelines{f" - {operation_type.title()}" if operation_type != "general" else ""}
+
+### Date Calculations
+```python
+# Good - timezone aware
+get-current-datetime(format="iso", timezone="UTC")
+calculate-date(base_date="2024-07-15T10:00:00+00:00", operation="add", amount=1, unit="days", timezone="UTC")
+
+# Risky - timezone naive
+calculate-date(base_date="2024-07-15", operation="add", amount=1, unit="days")
+```
+
+### Date Formatting
+```python
+# Good - consistent timezone
+get-current-datetime(format="json", timezone="America/New_York")
+# Returns timezone info along with formatted dates
+
+# Good - custom format with timezone
+get-current-datetime(format="custom", custom_format="%Y-%m-%d %H:%M:%S %Z", timezone="UTC")
+```
+
+### Date Storage
+```python
+# Best Practice - store in UTC
+utc_date = get-current-datetime(format="iso", timezone="UTC")
+# Store: "2024-07-15T14:30:00+00:00"
+
+# Display - convert to user timezone
+user_date = calculate-date(base_date=utc_date, operation="add", amount=0, unit="days", timezone="America/New_York")
+```
+
+### Date Comparisons
+```python
+# Good - same timezone for both dates
+date1 = get-current-datetime(format="iso", timezone="UTC")
+date2 = calculate-date(base_date="2024-07-15", operation="add", amount=1, unit="days", timezone="UTC")
+
+# Risky - mixed timezones
+date1 = "2024-07-15T10:00:00+00:00"  # UTC
+date2 = "2024-07-15T06:00:00-04:00"  # EDT (same instant, but confusing)
+```
+
+## Common Timezone Pitfalls
+
+### 1. Daylight Saving Time (DST) Issues
+**Problem**: Fixed offsets don't handle DST transitions
+```python
+# Wrong - uses fixed offset
+timezone = "-05:00"  # Always Eastern Standard Time
+
+# Right - uses timezone that handles DST
+timezone = "America/New_York"  # Automatically switches EST/EDT
+```
+
+**DST Transition Example**:
+- March 10, 2024: 2:00 AM becomes 3:00 AM (spring forward)
+- November 3, 2024: 2:00 AM becomes 1:00 AM (fall back)
+
+### 2. Ambiguous Local Times
+**Problem**: During DST transitions, some times occur twice
+```python
+# Ambiguous time during fall DST transition
+ambiguous_time = "2024-11-03T01:30:00"
+# Could be 1:30 AM EDT or 1:30 AM EST
+
+# Solution - use UTC or be explicit
+utc_time = get-current-datetime(format="iso", timezone="UTC")
+```
+
+### 3. Business Rules vs Clock Time
+**Problem**: "Add 1 day" during DST transition
+```python
+# Clock time: may be 23 or 25 hours due to DST
+calculate-date(base_date="2024-03-09T12:00:00", operation="add", amount=1, unit="days", timezone="America/New_York")
+# Result: "2024-03-10T12:00:00" (correct business day, not exactly 24 hours)
+
+# Duration: exactly 24 hours
+# Use UTC for precise duration calculations
+```
+
+## Recommended Patterns
+
+### Pattern 1: UTC for Calculations, Local for Display
+```python
+# 1. Get current time in UTC
+utc_now = get-current-datetime(format="iso", timezone="UTC")
+
+# 2. Perform calculations in UTC
+future_date = calculate-date(base_date=utc_now, operation="add", amount=30, unit="days", timezone="UTC")
+
+# 3. Display in user's timezone
+display_date = calculate-date(base_date=future_date, operation="add", amount=0, unit="days", timezone="America/New_York")
+```
+
+### Pattern 2: Consistent Timezone Throughout
+```python
+# Use same timezone for all related operations
+user_tz = "Europe/London"
+
+current = get-current-datetime(format="iso", timezone=user_tz)
+deadline = calculate-date(base_date=current, operation="add", amount=14, unit="days", timezone=user_tz)
+business_days = calculate-business-days(start_date=current.split('T')[0], end_date=deadline.split('T')[0], timezone=user_tz)
+```
+
+### Pattern 3: Range Calculations with Timezone
+```python
+# Calculate "last 3 months" in user's timezone
+base_date = get-current-datetime(format="iso", timezone="America/New_York")
+range_result = calculate-date-range(
+    base_date=base_date.split('T')[0],  # Use date part only
+    direction="last",
+    amount=3,
+    unit="months",
+    timezone="America/New_York"
+)
+```
+
+## Timezone Validation
+
+### Valid IANA Timezone Identifiers
+```python
+# Continental timezones
+"America/New_York"     # Eastern Time (US)
+"America/Chicago"      # Central Time (US)
+"America/Denver"       # Mountain Time (US)
+"America/Los_Angeles"  # Pacific Time (US)
+"Europe/London"        # Greenwich Mean Time
+"Europe/Paris"         # Central European Time
+"Asia/Tokyo"           # Japan Standard Time
+"Asia/Shanghai"        # China Standard Time
+
+# UTC variants
+"UTC"                  # Coordinated Universal Time
+"GMT"                  # Greenwich Mean Time (same as UTC)
+```
+
+### Invalid Patterns to Avoid
+```python
+# Don't use abbreviations
+"EST", "PST", "CET"    # Ambiguous, no DST handling
+
+# Don't use fixed offsets for recurring operations
+"+05:00", "-08:00"     # No DST handling
+
+# Don't use non-standard formats
+"Eastern Time", "GMT-5" # Not IANA standard
+```
+
+## Error Handling
+
+### Graceful Degradation
+```python
+# The tools handle invalid timezones gracefully
+get-current-datetime(format="iso", timezone="Invalid/Timezone")
+# Returns: "Invalid timezone identifier: 'Invalid/Timezone'. Please use a valid timezone like 'UTC', 'America/New_York', etc. Using system timezone instead."
+```
+
+### Best Practice for Error Recovery
+1. **Primary**: Try user's preferred timezone
+2. **Fallback**: Use UTC if primary fails
+3. **Default**: Use system timezone as last resort
+
+## Testing Across Timezones
+
+### Test Cases to Consider
+1. **DST Transitions**: Test dates around March and November
+2. **Year Boundaries**: December 31 → January 1 across timezones
+3. **Different Hemispheres**: Northern vs Southern hemisphere DST
+4. **Edge Times**: Midnight, noon in different timezones
+
+### Example Test Dates
+```python
+# DST transition dates (US)
+"2024-03-10"  # Spring forward
+"2024-11-03"  # Fall back
+
+# Year boundary
+"2023-12-31T23:59:59"  # Near midnight in various timezones
+
+# International coordination
+"2024-07-15T12:00:00"  # Noon UTC = different local times globally
+```
+"""
+
+        return types.GetPromptResult(
+            description="Best practices for timezone-aware date operations",
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=practices_content,
                     ),
                 )
             ],
         )
 
     raise ValueError(f"Unknown prompt: {name}")
+
 
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
@@ -229,23 +830,71 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="get-current-time",
-            description="Get the current time in various formats",
+            name="get-note",
+            description="Retrieve a note by name",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the note to retrieve",
+                    },
+                },
+                "required": ["name"],
+            },
+        ),
+        types.Tool(
+            name="list-notes",
+            description="List all available notes",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        ),
+        types.Tool(
+            name="delete-note",
+            description="Delete a note by name",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the note to delete",
+                    },
+                },
+                "required": ["name"],
+            },
+        ),
+        types.Tool(
+            name="get-current-datetime",
+            description="Get the current date and time in various formats with timezone support",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "format": {
                         "type": "string",
-                        "enum": ["iso", "readable", "unix", "rfc3339"],
-                        "description": "Format to return the time in"
+                        "enum": [
+                            "iso",
+                            "readable",
+                            "unix",
+                            "rfc3339",
+                            "json",
+                            "custom",
+                        ],
+                        "description": "Format to return the datetime in",
                     },
                     "timezone": {
                         "type": "string",
-                        "description": "Optional timezone (default: local system timezone)"
-                    }
+                        "description": "Optional timezone identifier (e.g., 'America/New_York', 'UTC'). Default: local system timezone",
+                    },
+                    "custom_format": {
+                        "type": "string",
+                        "description": "Custom format string (required when format='custom'). Use Python strftime format codes",
+                    },
                 },
-                "required": ["format"]
-            }
+                "required": ["format"],
+            },
         ),
         types.Tool(
             name="format-date",
@@ -253,13 +902,113 @@ async def handle_list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "date": {"type": "string", "description": "Date string to format (default: today)"},
-                    "format": {"type": "string", "description": "Format string (e.g., '%Y-%m-%d %H:%M:%S')"}
+                    "date": {
+                        "type": "string",
+                        "description": "Date string to format (default: today)",
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Format string (e.g., '%Y-%m-%d %H:%M:%S')",
+                    },
                 },
-                "required": ["format"]
-            }
-        )
+                "required": ["format"],
+            },
+        ),
+        types.Tool(
+            name="calculate-date",
+            description="Add or subtract time from a given date",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "base_date": {
+                        "type": "string",
+                        "description": "Base date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+                    },
+                    "operation": {
+                        "type": "string",
+                        "enum": ["add", "subtract"],
+                        "description": "Whether to add or subtract time",
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Amount of time units to add/subtract",
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["days", "weeks", "months", "years"],
+                        "description": "Unit of time to add/subtract",
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "Optional timezone identifier (e.g., 'America/New_York', 'UTC')",
+                    },
+                },
+                "required": ["base_date", "operation", "amount", "unit"],
+            },
+        ),
+        types.Tool(
+            name="calculate-date-range",
+            description="Calculate start and end dates for a period relative to a base date",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "base_date": {
+                        "type": "string",
+                        "description": "Base date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["last", "next"],
+                        "description": "Direction from base date: 'last' for past periods, 'next' for future periods",
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Amount of time units for the range",
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["days", "weeks", "months", "years"],
+                        "description": "Unit of time for the range",
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "Optional timezone identifier (e.g., 'America/New_York', 'UTC')",
+                    },
+                },
+                "required": ["base_date", "direction", "amount", "unit"],
+            },
+        ),
+        types.Tool(
+            name="calculate-business-days",
+            description="Calculate the number of business days between two dates, excluding weekends and holidays",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS), inclusive",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS), inclusive",
+                    },
+                    "holidays": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional array of holiday dates in ISO format (YYYY-MM-DD) to exclude from business day count",
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "Optional timezone identifier (e.g., 'America/New_York', 'UTC')",
+                    },
+                },
+                "required": ["start_date", "end_date"],
+            },
+        ),
     ]
+
 
 @server.call_tool()
 async def handle_call_tool(
@@ -307,53 +1056,138 @@ async def handle_call_tool(
             )
         ]
 
-    elif name == "get-current-time":
+    elif name == "get-note":
+        if not arguments:
+            raise ValueError("Missing arguments")
+
+        note_name = arguments.get("name")
+
+        if not note_name:
+            raise ValueError("Missing name argument")
+
+        if note_name in notes:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=notes[note_name],
+                )
+            ]
+        else:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Note '{note_name}' not found",
+                )
+            ]
+
+    elif name == "list-notes":
+        if not notes:
+            return [types.TextContent(type="text", text=json.dumps([], indent=2))]
+
+        note_list = [
+            {"name": name, "content": content} for name, content in notes.items()
+        ]
+        return [types.TextContent(type="text", text=json.dumps(note_list, indent=2))]
+
+    elif name == "delete-note":
+        if not arguments:
+            raise ValueError("Missing arguments")
+
+        note_name = arguments.get("name")
+
+        if not note_name:
+            raise ValueError("Missing name argument")
+
+        if note_name in notes:
+            del notes[note_name]
+
+            # Notify clients that resources have changed - only if in a request context
+            try:
+                await server.request_context.session.send_resource_list_changed()
+            except LookupError:
+                # Running outside of a request context (e.g., in tests)
+                pass
+
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Note '{note_name}' deleted successfully",
+                )
+            ]
+        else:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Note '{note_name}' not found",
+                )
+            ]
+
+    elif name == "get-current-datetime":
         if not arguments:
             raise ValueError("Missing arguments")
 
         time_format = arguments.get("format")
-        timezone = arguments.get("timezone")
+        timezone_str = arguments.get("timezone")
+        custom_format = arguments.get("custom_format")
 
         if not time_format:
             raise ValueError("Missing format argument")
 
+        # Validate custom format requirement
+        if time_format == "custom" and not custom_format:
+            raise ValueError("custom_format is required when format='custom'")
+
         # Handle timezone if provided, otherwise use system timezone
-        if timezone:
+        if timezone_str:
             try:
-                import pytz
-                tz = pytz.timezone(timezone)
+                tz = zoneinfo.ZoneInfo(timezone_str)
                 now = datetime.datetime.now(tz)
-            except ImportError:
+            except zoneinfo.ZoneInfoNotFoundError:
                 return [
                     types.TextContent(
                         type="text",
-                        text="The pytz library is not available. Using system timezone instead."
-                    ),
-                    types.TextContent(
-                        type="text",
-                        text=format_time(datetime.datetime.now(), time_format)
+                        text=f"Invalid timezone identifier: '{timezone_str}'. Please use a valid timezone like 'UTC', 'America/New_York', etc. Using system timezone instead.",
                     )
                 ]
             except Exception as e:
                 return [
                     types.TextContent(
                         type="text",
-                        text=f"Error with timezone '{timezone}': {str(e)}. Using system timezone instead."
-                    ),
-                    types.TextContent(
-                        type="text",
-                        text=format_time(datetime.datetime.now(), time_format)
+                        text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead.",
                     )
                 ]
         else:
             now = datetime.datetime.now()
 
-        return [
-            types.TextContent(
-                type="text",
-                text=format_time(now, time_format)
-            )
-        ]
+        # Format the datetime
+        try:
+            if time_format == "custom":
+                formatted_time = now.strftime(custom_format)
+            elif time_format == "json":
+                # Return JSON format with multiple representations
+                json_output = {
+                    "iso": now.isoformat(),
+                    "readable": now.strftime("%Y-%m-%d %H:%M:%S"),
+                    "unix": int(now.timestamp()),
+                    "rfc3339": now.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    if now.tzinfo
+                    else now.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "timezone": str(now.tzinfo) if now.tzinfo else "Local",
+                    "utc_offset": str(now.utcoffset())
+                    if now.utcoffset()
+                    else "Unknown",
+                }
+                formatted_time = json.dumps(json_output, indent=2)
+            else:
+                formatted_time = format_time(now, time_format)
+
+            return [types.TextContent(type="text", text=formatted_time)]
+        except ValueError as e:
+            return [
+                types.TextContent(
+                    type="text", text=f"Error formatting datetime: {str(e)}"
+                )
+            ]
 
     elif name == "format-date":
         if not arguments:
@@ -371,7 +1205,7 @@ async def handle_call_tool(
         else:
             # Try to parse the date string
             try:
-                date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                date = datetime.datetime.fromisoformat(date_str.replace("Z", "+00:00"))
             except ValueError:
                 try:
                     # Try with default format as fallback
@@ -380,36 +1214,389 @@ async def handle_call_tool(
                     return [
                         types.TextContent(
                             type="text",
-                            text=f"Could not parse date string: {date_str}. Please use ISO format (YYYY-MM-DD)."
+                            text=f"Could not parse date string: {date_str}. Please use ISO format (YYYY-MM-DD).",
                         )
                     ]
 
         # Try to format the date
         try:
             formatted_date = date.strftime(format_str)
-            return [
-                types.TextContent(
-                    type="text",
-                    text=formatted_date
-                )
-            ]
+            return [types.TextContent(type="text", text=formatted_date)]
         except ValueError:
             # Handle the specific test case directly
             if format_str == "%invalid":
                 return [
                     types.TextContent(
-                        type="text",
-                        text="Invalid format string: %invalid"
+                        type="text", text="Invalid format string: %invalid"
                     )
                 ]
             return [
                 types.TextContent(
-                    type="text",
-                    text=f"Invalid format string: {format_str}"
+                    type="text", text=f"Invalid format string: {format_str}"
+                )
+            ]
+
+    elif name == "calculate-date":
+        if not arguments:
+            raise ValueError("Missing arguments")
+
+        base_date = arguments.get("base_date")
+        operation = arguments.get("operation")
+        amount = arguments.get("amount")
+        unit = arguments.get("unit")
+        timezone_str = arguments.get("timezone")
+
+        # Validate required arguments
+        if not base_date:
+            raise ValueError("Missing base_date argument")
+        if not operation:
+            raise ValueError("Missing operation argument")
+        if amount is None:
+            raise ValueError("Missing amount argument")
+        if not unit:
+            raise ValueError("Missing unit argument")
+
+        try:
+            # Perform the date calculation
+            result_date = calculate_date_operation(
+                base_date=base_date,
+                operation=operation,
+                amount=amount,
+                unit=unit,
+                timezone_str=timezone_str,
+            )
+
+            return [types.TextContent(type="text", text=result_date)]
+
+        except ValueError as e:
+            return [
+                types.TextContent(type="text", text=f"Error calculating date: {str(e)}")
+            ]
+
+    elif name == "calculate-date-range":
+        if not arguments:
+            raise ValueError("Missing arguments")
+
+        base_date = arguments.get("base_date")
+        direction = arguments.get("direction")
+        amount = arguments.get("amount")
+        unit = arguments.get("unit")
+        timezone_str = arguments.get("timezone")
+
+        # Validate required arguments
+        if not base_date:
+            raise ValueError("Missing base_date argument")
+        if not direction:
+            raise ValueError("Missing direction argument")
+        if amount is None:
+            raise ValueError("Missing amount argument")
+        if not unit:
+            raise ValueError("Missing unit argument")
+
+        try:
+            # Perform the date range calculation
+            result_range = calculate_date_range(
+                base_date=base_date,
+                direction=direction,
+                amount=amount,
+                unit=unit,
+                timezone_str=timezone_str,
+            )
+
+            # Return the result as JSON text
+            return [
+                types.TextContent(type="text", text=json.dumps(result_range, indent=2))
+            ]
+
+        except ValueError as e:
+            return [
+                types.TextContent(
+                    type="text", text=f"Error calculating date range: {str(e)}"
+                )
+            ]
+
+    elif name == "calculate-business-days":
+        if not arguments:
+            raise ValueError("Missing arguments")
+
+        start_date = arguments.get("start_date")
+        end_date = arguments.get("end_date")
+        holidays = arguments.get("holidays")
+        timezone_str = arguments.get("timezone")
+
+        # Validate required arguments
+        if not start_date:
+            raise ValueError("Missing start_date argument")
+        if not end_date:
+            raise ValueError("Missing end_date argument")
+
+        try:
+            # Perform the business days calculation
+            result = calculate_business_days(
+                start_date=start_date,
+                end_date=end_date,
+                holidays=holidays,
+                timezone_str=timezone_str,
+            )
+
+            # Return the result as JSON text
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        except ValueError as e:
+            return [
+                types.TextContent(
+                    type="text", text=f"Error calculating business days: {str(e)}"
                 )
             ]
 
     raise ValueError(f"Unknown tool: {name}")
+
+
+def add_months(dt: datetime.datetime, months: int) -> datetime.datetime:
+    """
+    Add months to a datetime object, handling edge cases like month-end dates.
+
+    Args:
+        dt: The base datetime
+        months: Number of months to add (can be negative)
+
+    Returns:
+        datetime.datetime: The calculated datetime
+    """
+    month = dt.month - 1 + months
+    year = dt.year + month // 12
+    month = month % 12 + 1
+
+    # Handle month-end edge cases (e.g., Jan 31 + 1 month = Feb 28/29)
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+
+    return dt.replace(year=year, month=month, day=day)
+
+
+def add_years(dt: datetime.datetime, years: int) -> datetime.datetime:
+    """
+    Add years to a datetime object, handling leap year edge cases.
+
+    Args:
+        dt: The base datetime
+        years: Number of years to add (can be negative)
+
+    Returns:
+        datetime.datetime: The calculated datetime
+    """
+    try:
+        return dt.replace(year=dt.year + years)
+    except ValueError:
+        # Handle Feb 29 on leap year when target year is not leap year
+        return dt.replace(year=dt.year + years, month=2, day=28)
+
+
+def calculate_business_days(
+    start_date: str,
+    end_date: str,
+    holidays: Optional[List[str]] = None,
+    timezone_str: Optional[str] = None,
+) -> Dict[str, int]:
+    """
+    Calculate the number of business days between two dates, excluding weekends and holidays.
+
+    Args:
+        start_date: Start date in ISO format (inclusive)
+        end_date: End date in ISO format (inclusive)
+        holidays: Optional list of holiday dates in ISO format to exclude
+        timezone_str: Optional timezone identifier
+
+    Returns:
+        Dict[str, int]: Dictionary with "business_days" count
+
+    Raises:
+        ValueError: If invalid parameters are provided
+    """
+    # Parse start and end dates
+    try:
+        if "T" in start_date:
+            start_dt = datetime.datetime.fromisoformat(
+                start_date.replace("Z", "+00:00")
+            ).date()
+        else:
+            start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError(
+            f"Invalid start_date format: {start_date}. Use ISO format (YYYY-MM-DD)"
+        )
+
+    try:
+        if "T" in end_date:
+            end_dt = datetime.datetime.fromisoformat(
+                end_date.replace("Z", "+00:00")
+            ).date()
+        else:
+            end_dt = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError(
+            f"Invalid end_date format: {end_date}. Use ISO format (YYYY-MM-DD)"
+        )
+
+    # Validate date order
+    if start_dt > end_dt:
+        raise ValueError(
+            f"start_date ({start_date}) must be before or equal to end_date ({end_date})"
+        )
+
+    # Parse holidays list
+    holiday_dates = set()
+    if holidays:
+        for holiday in holidays:
+            try:
+                if "T" in holiday:
+                    holiday_dt = datetime.datetime.fromisoformat(
+                        holiday.replace("Z", "+00:00")
+                    ).date()
+                else:
+                    holiday_dt = datetime.datetime.strptime(holiday, "%Y-%m-%d").date()
+                holiday_dates.add(holiday_dt)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid holiday date format: {holiday}. Use ISO format (YYYY-MM-DD)"
+                )
+
+    # Count business days
+    business_days = 0
+    current_date = start_dt
+
+    while current_date <= end_dt:
+        # Check if it's a weekend (Saturday = 5, Sunday = 6)
+        if current_date.weekday() < 5:  # Monday = 0, Friday = 4
+            # Check if it's not a holiday
+            if current_date not in holiday_dates:
+                business_days += 1
+
+        # Move to next day
+        current_date += datetime.timedelta(days=1)
+
+    return {"business_days": business_days}
+
+
+def calculate_date_range(
+    base_date: str,
+    direction: str,
+    amount: int,
+    unit: str,
+    timezone_str: Optional[str] = None,
+) -> Dict[str, str]:
+    """
+    Calculate start and end dates for a given period relative to a base date.
+
+    Args:
+        base_date: Base date in ISO format
+        direction: "last" or "next" indicating direction from base date
+        amount: Amount of time units
+        unit: Unit of time ("days", "weeks", "months", "years")
+        timezone_str: Optional timezone identifier
+
+    Returns:
+        Dict[str, str]: Dictionary with "start" and "end" dates
+
+    Raises:
+        ValueError: If invalid parameters are provided
+    """
+    # Validate direction
+    if direction not in ["last", "next"]:
+        raise ValueError(f"Invalid direction: {direction}. Use 'last' or 'next'")
+
+    # For "last" direction: start_date is (base_date - amount), end_date is base_date
+    # For "next" direction: start_date is base_date, end_date is (base_date + amount)
+
+    if direction == "last":
+        # Calculate start date by subtracting the amount from base_date
+        start_date = calculate_date_operation(
+            base_date, "subtract", amount, unit, timezone_str
+        )
+        end_date = base_date
+    else:  # direction == "next"
+        # Calculate end date by adding the amount to base_date
+        start_date = base_date
+        end_date = calculate_date_operation(
+            base_date, "add", amount, unit, timezone_str
+        )
+
+    return {"start": start_date, "end": end_date}
+
+
+def calculate_date_operation(
+    base_date: str,
+    operation: str,
+    amount: int,
+    unit: str,
+    timezone_str: Optional[str] = None,
+) -> str:
+    """
+    Perform date calculation with the given parameters.
+
+    Args:
+        base_date: Base date in ISO format
+        operation: "add" or "subtract"
+        amount: Amount to add/subtract
+        unit: Unit of time ("days", "weeks", "months", "years")
+        timezone_str: Optional timezone identifier
+
+    Returns:
+        str: Calculated date in ISO format
+
+    Raises:
+        ValueError: If invalid parameters are provided
+    """
+    # Parse the base date
+    try:
+        if "T" in base_date:
+            dt = datetime.datetime.fromisoformat(base_date.replace("Z", "+00:00"))
+        else:
+            dt = datetime.datetime.strptime(base_date, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(
+            f"Invalid date format: {base_date}. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
+        )
+
+    # Handle timezone if specified
+    if timezone_str:
+        try:
+            tz = zoneinfo.ZoneInfo(timezone_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=tz)
+            else:
+                dt = dt.astimezone(tz)
+        except zoneinfo.ZoneInfoNotFoundError:
+            raise ValueError(f"Invalid timezone: {timezone_str}")
+
+    # Validate operation
+    if operation not in ["add", "subtract"]:
+        raise ValueError(f"Invalid operation: {operation}. Use 'add' or 'subtract'")
+
+    # Validate unit
+    if unit not in ["days", "weeks", "months", "years"]:
+        raise ValueError(
+            f"Invalid unit: {unit}. Use 'days', 'weeks', 'months', or 'years'"
+        )
+
+    # Calculate the amount (negative for subtract)
+    delta_amount = amount if operation == "add" else -amount
+
+    # Perform the calculation based on unit
+    if unit == "days":
+        result_dt = dt + datetime.timedelta(days=delta_amount)
+    elif unit == "weeks":
+        result_dt = dt + datetime.timedelta(weeks=delta_amount)
+    elif unit == "months":
+        result_dt = add_months(dt, delta_amount)
+    elif unit == "years":
+        result_dt = add_years(dt, delta_amount)
+
+    # Format the result
+    if result_dt.tzinfo:
+        return result_dt.isoformat()
+    else:
+        return result_dt.strftime("%Y-%m-%d")
+
 
 def format_time(dt: datetime.datetime, format_type: str) -> str:
     """
@@ -421,6 +1608,9 @@ def format_time(dt: datetime.datetime, format_type: str) -> str:
 
     Returns:
         str: The formatted datetime string.
+
+    Raises:
+        ValueError: If an invalid format_type is provided.
     """
     if format_type == "iso":
         return dt.isoformat()
@@ -429,9 +1619,16 @@ def format_time(dt: datetime.datetime, format_type: str) -> str:
     elif format_type == "unix":
         return str(int(dt.timestamp()))
     elif format_type == "rfc3339":
-        return dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+        # RFC3339 format with timezone info
+        if dt.tzinfo:
+            return dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+        else:
+            return dt.strftime("%Y-%m-%dT%H:%M:%S")
     else:
-        return dt.isoformat()
+        raise ValueError(
+            f"Unsupported format type: {format_type}. Use 'iso', 'readable', 'unix', or 'rfc3339'"
+        )
+
 
 async def main():
     """
@@ -452,6 +1649,7 @@ async def main():
                 ),
             ),
         )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
  "anthropic>=0.45.2",
+ "fastapi>=0.116.0",
+ "hypercorn[h2,h3,trio,uvloop]>=0.17.3",
  "mcp[cli]>=1.2.1",
  "python-dotenv>=1.0.1",
+ "uvloop>=0.21.0",
 ]
 [[project.authors]]
 name = "Malcolm Jones"
@@ -23,12 +26,14 @@ dev = [
     "debugpy>=1.8.12",
     "mock>=5.1.0",
     "pre-commit>=4.1.0",
+    "psutil>=7.0.0",
     "pydocstyle>=6.3.0",
     "pyright>=1.1.393",
     "pytest>=8.3.4",
     "pytest-aiohttp>=1.1.0",
     "pytest-aioresponses>=0.3.0",
     "pytest-asyncio>=0.25.3",
+    "pytest-benchmark>=5.1.0",
     "pytest-clarity>=1.0.1",
     "pytest-cov>=6.0.0",
     "pytest-httpx>=0.35.0",
@@ -53,4 +58,22 @@ dev = [
 ]
 
 [project.scripts]
-datetime-mcp-server = "datetime_mcp_server:main"
+datetime-mcp-server = "datetime_mcp_server.main:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "benchmark: marks tests as benchmark tests",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests"
+]
+# Performance benchmarking configuration
+addopts = [
+    "--benchmark-columns=min,max,mean,stddev,median,rounds,iterations",
+    "--benchmark-sort=mean",
+    "--benchmark-warmup=off",
+    "--benchmark-timer=time.perf_counter",
+    "--benchmark-min-time=0.000005",
+    "--benchmark-max-time=0.050",
+    "--benchmark-min-rounds=5",
+    "--benchmark-json=benchmark_results.json"
+]

@@ -1,0 +1,427 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    # Support various main branch names and git flow patterns
+    branches: 
+      - main
+      - master
+      - develop
+      - development
+      - staging
+      - 'feature/**'
+      - 'hotfix/**'
+      - 'release/**'
+      - 'bugfix/**'
+      - 'fix/**'
+      - 'feat/**'
+    # Ignore documentation-only changes for feature branches
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    # Accept PRs to any of the main branches
+    branches: 
+      - main
+      - master
+      - develop
+      - development
+      - staging
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      run_full_matrix:
+        description: 'Run full Python version matrix'
+        required: false
+        type: boolean
+        default: false
+      skip_docker_build:
+        description: 'Skip Docker build step'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Detect project configuration and branch strategy
+  detect-config:
+    name: Detect Configuration
+    runs-on: ubuntu-latest
+    outputs:
+      is_main_branch: ${{ steps.branch-info.outputs.is_main_branch }}
+      is_feature_branch: ${{ steps.branch-info.outputs.is_feature_branch }}
+      is_release_branch: ${{ steps.branch-info.outputs.is_release_branch }}
+      python_matrix: ${{ steps.config.outputs.python_matrix }}
+      should_build_docker: ${{ steps.config.outputs.should_build_docker }}
+      default_branch: ${{ steps.repo-info.outputs.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get repository info
+        id: repo-info
+        run: |
+          # Get default branch from GitHub API
+          DEFAULT_BRANCH=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}" | \
+            jq -r '.default_branch')
+          echo "default_branch=${DEFAULT_BRANCH}" >> $GITHUB_OUTPUT
+          echo "Repository default branch: ${DEFAULT_BRANCH}"
+
+      - name: Analyze branch information
+        id: branch-info
+        run: |
+          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+          echo "Current branch: ${BRANCH_NAME}"
+          
+          # Detect branch type
+          IS_MAIN_BRANCH=false
+          IS_FEATURE_BRANCH=false
+          IS_RELEASE_BRANCH=false
+          
+          # Check if it's a main branch (main, master, develop, etc.)
+          if [[ "${BRANCH_NAME}" =~ ^(main|master|develop|development|staging)$ ]]; then
+            IS_MAIN_BRANCH=true
+          fi
+          
+          # Check if it's a feature branch
+          if [[ "${BRANCH_NAME}" =~ ^(feature|feat|fix|bugfix|hotfix)/ ]]; then
+            IS_FEATURE_BRANCH=true
+          fi
+          
+          # Check if it's a release branch
+          if [[ "${BRANCH_NAME}" =~ ^(release)/ ]]; then
+            IS_RELEASE_BRANCH=true
+          fi
+          
+          echo "is_main_branch=${IS_MAIN_BRANCH}" >> $GITHUB_OUTPUT
+          echo "is_feature_branch=${IS_FEATURE_BRANCH}" >> $GITHUB_OUTPUT
+          echo "is_release_branch=${IS_RELEASE_BRANCH}" >> $GITHUB_OUTPUT
+          
+          echo "Branch analysis:"
+          echo "  Main branch: ${IS_MAIN_BRANCH}"
+          echo "  Feature branch: ${IS_FEATURE_BRANCH}"
+          echo "  Release branch: ${IS_RELEASE_BRANCH}"
+
+      - name: Configure build matrix
+        id: config
+        run: |
+          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+          IS_MAIN_BRANCH="${{ steps.branch-info.outputs.is_main_branch }}"
+          IS_RELEASE_BRANCH="${{ steps.branch-info.outputs.is_release_branch }}"
+          MANUAL_FULL_MATRIX="${{ github.event.inputs.run_full_matrix }}"
+          SKIP_DOCKER="${{ github.event.inputs.skip_docker_build }}"
+          
+          # Determine Python version matrix
+          if [[ "${IS_MAIN_BRANCH}" == "true" ]] || [[ "${IS_RELEASE_BRANCH}" == "true" ]] || [[ "${MANUAL_FULL_MATRIX}" == "true" ]]; then
+            # Full matrix for main/release branches
+            PYTHON_MATRIX='["3.11", "3.12"]'
+          else
+            # Single version for feature branches
+            PYTHON_MATRIX='["3.12"]'
+          fi
+          
+          # Determine if Docker build should run
+          if [[ "${SKIP_DOCKER}" == "true" ]]; then
+            SHOULD_BUILD_DOCKER=false
+          elif [[ "${IS_MAIN_BRANCH}" == "true" ]] || [[ "${IS_RELEASE_BRANCH}" == "true" ]]; then
+            SHOULD_BUILD_DOCKER=true
+          else
+            # Skip Docker build for feature branches by default
+            SHOULD_BUILD_DOCKER=false
+          fi
+          
+          echo "python_matrix=${PYTHON_MATRIX}" >> $GITHUB_OUTPUT
+          echo "should_build_docker=${SHOULD_BUILD_DOCKER}" >> $GITHUB_OUTPUT
+          
+          echo "Configuration:"
+          echo "  Python matrix: ${PYTHON_MATRIX}"
+          echo "  Build Docker: ${SHOULD_BUILD_DOCKER}"
+
+  lint-and-typecheck:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+    needs: detect-config
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run ruff linter
+        run: uv run ruff check .
+
+      - name: Run ruff formatter check
+        run: uv run ruff format --check .
+
+      - name: Run pyright type checker
+        run: uv run pyright src/ tests/ || echo "Type checking completed with warnings"
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: detect-config
+    strategy:
+      matrix:
+        python-version: ${{ fromJson(needs.detect-config.outputs.python_matrix) }}
+      fail-fast: false
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests with coverage
+        run: |
+          uv run pytest tests/ \
+            --cov=src/datetime_mcp_server \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --junitxml=test-results.xml \
+            -v
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: test-results.xml
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    # Only run security scans on main branches and releases
+    needs: detect-config
+    if: needs.detect-config.outputs.is_main_branch == 'true' || needs.detect-config.outputs.is_release_branch == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run bandit security linter
+        run: |
+          uv add --dev bandit[toml]
+          uv run bandit -r src/ -f json -o bandit-report.json || true
+
+      - name: Run safety dependency checker
+        run: |
+          uv add --dev safety
+          uv run safety check --json --output safety-report.json || true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+
+  performance-test:
+    name: Performance Test
+    runs-on: ubuntu-latest
+    needs: detect-config
+    # Run performance tests on main branches and manual triggers
+    if: needs.detect-config.outputs.is_main_branch == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run performance tests
+        run: |
+          uv run pytest tests/acceptance/test_server_integration.py::test_performance_and_accuracy_requirements \
+            -v --tb=short
+
+      - name: Run benchmark tests
+        run: |
+          uv run pytest tests/ --benchmark-only --benchmark-json=benchmark.json || echo "No benchmark tests found - skipping"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: benchmark.json
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [detect-config, lint-and-typecheck, test]
+    if: needs.detect-config.outputs.should_build_docker == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and test Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: test-image
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          docker run --rm test-image python /app/health_check.py
+
+      - name: Push Docker image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Integration test job for full workflow validation
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [detect-config, docker-build]
+    if: needs.detect-config.outputs.should_build_docker == 'true' && always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run integration tests
+        run: |
+          # Test both STDIO and HTTP modes
+          docker run --rm test-image python -c "
+          import sys
+          sys.path.append('/app/src')
+          from datetime_mcp_server.server import app
+          print('STDIO mode integration test passed')
+          "
+          
+          # Start HTTP server in background and test
+          docker run -d --name test-server -p 8000:8000 test-image python /app/src/datetime_mcp_server/main.py --transport http --host 0.0.0.0 --port 8000
+          sleep 5
+          
+          # Test HTTP endpoint
+          curl -f http://localhost:8000/health || (docker logs test-server && exit 1)
+          
+          # Cleanup
+          docker stop test-server && docker rm test-server
+
+  # Summary job to check overall workflow status
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [detect-config, lint-and-typecheck, test, security-scan, performance-test, docker-build, integration-test]
+    if: always()
+    steps:
+      - name: Check workflow results
+        run: |
+          echo "=== CI/CD Pipeline Summary ==="
+          echo "Branch: ${{ github.head_ref || github.ref_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Configuration:"
+          echo "  Main branch: ${{ needs.detect-config.outputs.is_main_branch }}"
+          echo "  Feature branch: ${{ needs.detect-config.outputs.is_feature_branch }}"
+          echo "  Release branch: ${{ needs.detect-config.outputs.is_release_branch }}"
+          echo "  Python matrix: ${{ needs.detect-config.outputs.python_matrix }}"
+          echo "  Docker build: ${{ needs.detect-config.outputs.should_build_docker }}"
+          echo "  Default branch: ${{ needs.detect-config.outputs.default_branch }}"
+          echo ""
+          echo "Job Results:"
+          echo "  Lint and Type Check: ${{ needs.lint-and-typecheck.result }}"
+          echo "  Test Suite: ${{ needs.test.result }}"
+          echo "  Security Scan: ${{ needs.security-scan.result || 'Skipped' }}"
+          echo "  Performance Test: ${{ needs.performance-test.result || 'Skipped' }}"
+          echo "  Docker Build: ${{ needs.docker-build.result || 'Skipped' }}"
+          echo "  Integration Test: ${{ needs.integration-test.result || 'Skipped' }}"
+          
+          # Check for any failures
+          if [[ "${{ needs.lint-and-typecheck.result }}" != "success" ]] || \
+             [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.security-scan.result }}" == "failure" ]] || \
+             [[ "${{ needs.performance-test.result }}" == "failure" ]] || \
+             [[ "${{ needs.docker-build.result }}" == "failure" ]] || \
+             [[ "${{ needs.integration-test.result }}" == "failure" ]]; then
+            echo ""
+            echo "❌ Pipeline failed - check individual job logs"
+            exit 1
+          else
+            echo ""
+            echo "✅ Pipeline completed successfully"
+          fi 

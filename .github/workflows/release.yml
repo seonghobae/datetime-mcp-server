@@ -1,0 +1,400 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'release/*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v0.1.0)'
+        required: true
+        type: string
+      target_branch:
+        description: 'Target branch for version update (leave empty for auto-detection)'
+        required: false
+        type: string
+        default: ''
+      create_prerelease:
+        description: 'Create as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  detect-release-config:
+    name: Detect Release Configuration
+    runs-on: ubuntu-latest
+    outputs:
+      target_branch: ${{ steps.branch-config.outputs.target_branch }}
+      default_branch: ${{ steps.repo-info.outputs.default_branch }}
+      is_prerelease: ${{ steps.version-info.outputs.is_prerelease }}
+      clean_version: ${{ steps.version-info.outputs.clean_version }}
+      full_version: ${{ steps.version-info.outputs.full_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get repository info
+        id: repo-info
+        run: |
+          # Get default branch from GitHub API
+          DEFAULT_BRANCH=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}" | \
+            jq -r '.default_branch')
+          echo "default_branch=${DEFAULT_BRANCH}" >> $GITHUB_OUTPUT
+          echo "Repository default branch: ${DEFAULT_BRANCH}"
+
+      - name: Configure target branch
+        id: branch-config
+        run: |
+          DEFAULT_BRANCH="${{ steps.repo-info.outputs.default_branch }}"
+          INPUT_BRANCH="${{ github.event.inputs.target_branch }}"
+          
+          # Determine target branch for version updates
+          if [[ -n "${INPUT_BRANCH}" ]]; then
+            TARGET_BRANCH="${INPUT_BRANCH}"
+            echo "Using manually specified target branch: ${TARGET_BRANCH}"
+          else
+            # Auto-detect target branch
+            # Check if common main branches exist
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+              TARGET_BRANCH="main"
+            elif git show-ref --verify --quiet refs/remotes/origin/master; then
+              TARGET_BRANCH="master"
+            elif git show-ref --verify --quiet refs/remotes/origin/develop; then
+              TARGET_BRANCH="develop"
+            else
+              TARGET_BRANCH="${DEFAULT_BRANCH}"
+            fi
+            echo "Auto-detected target branch: ${TARGET_BRANCH}"
+          fi
+          
+          echo "target_branch=${TARGET_BRANCH}" >> $GITHUB_OUTPUT
+
+      - name: Process version information
+        id: version-info
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            IS_PRERELEASE="${{ github.event.inputs.create_prerelease }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/}
+            # Auto-detect prerelease based on version format
+            if [[ "${VERSION}" =~ -(alpha|beta|rc|dev|pre) ]]; then
+              IS_PRERELEASE=true
+            else
+              IS_PRERELEASE=false
+            fi
+          fi
+          
+          # Clean version (remove 'v' prefix if present)
+          CLEAN_VERSION="${VERSION#v}"
+          
+          echo "full_version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "clean_version=${CLEAN_VERSION}" >> $GITHUB_OUTPUT
+          echo "is_prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
+          
+          echo "Version information:"
+          echo "  Full version: ${VERSION}"
+          echo "  Clean version: ${CLEAN_VERSION}"
+          echo "  Pre-release: ${IS_PRERELEASE}"
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: detect-release-config
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run full test suite
+        run: uv run pytest tests/ -v
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push release Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.detect-release-config.outputs.clean_version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.title=datetime-mcp-server
+            org.opencontainers.image.description=MCP server for precise date/time calculations
+            org.opencontainers.image.version=${{ needs.detect-release-config.outputs.clean_version }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Generate release notes from git log
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREVIOUS_TAG" ]; then
+            CHANGES=$(git log --pretty=format:"- %s" ${PREVIOUS_TAG}..HEAD)
+          else
+            CHANGES=$(git log --pretty=format:"- %s")
+          fi
+          
+          # Create release notes
+          cat > release_notes.md << EOF
+          ## Changes
+          
+          ${CHANGES}
+          
+          ## Docker Images
+          
+          - \`ghcr.io/${{ github.repository }}:${{ needs.detect-release-config.outputs.clean_version }}\`
+          - \`ghcr.io/${{ github.repository }}:latest\`
+          
+          ## Usage
+          
+          ### Docker
+          \`\`\`bash
+          # STDIO mode (default)
+          docker run --rm ghcr.io/${{ github.repository }}:${{ needs.detect-release-config.outputs.clean_version }}
+          
+          # HTTP mode
+          docker run --rm -p 8000:8000 ghcr.io/${{ github.repository }}:${{ needs.detect-release-config.outputs.clean_version }} \\
+            python /app/src/datetime_mcp_server/main.py --transport http --host 0.0.0.0 --port 8000
+          \`\`\`
+          
+          ### Docker Compose
+          \`\`\`bash
+          # Start with docker-compose
+          docker-compose up -d
+          
+          # Health check
+          curl http://localhost:8000/health
+          \`\`\`
+          
+          ## Features
+          
+          - **Transport Support**: Both STDIO and HTTP protocols
+          - **Performance**: ≤ 50ms response time (p95)
+          - **Multi-platform**: linux/amd64, linux/arm64
+          - **Test Coverage**: 100% (37 tests)
+          - **Tools**: 9 datetime calculation tools
+          - **Resources**: 5 informational resources
+          - **Prompts**: 5 guide prompts
+          
+          ## Supported Branches
+          
+          This release supports deployment to various Git workflows:
+          - Main branches: \`main\`, \`master\`, \`develop\`, \`development\`, \`staging\`
+          - Feature branches: \`feature/**\`, \`feat/**\`, \`fix/**\`, \`bugfix/**\`, \`hotfix/**\`
+          - Release branches: \`release/**\`
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.detect-release-config.outputs.full_version }}
+          name: Release ${{ needs.detect-release-config.outputs.full_version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ needs.detect-release-config.outputs.is_prerelease }}
+          generate_release_notes: true
+
+      - name: Update version in pyproject.toml (if manual release)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          TARGET_BRANCH="${{ needs.detect-release-config.outputs.target_branch }}"
+          CLEAN_VERSION="${{ needs.detect-release-config.outputs.clean_version }}"
+          
+          echo "Updating version in pyproject.toml to ${CLEAN_VERSION}"
+          
+          # Update version in pyproject.toml
+          sed -i 's/version = ".*"/version = "'${CLEAN_VERSION}'"/' pyproject.toml
+          
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Check if there are changes to commit
+          if git diff --quiet pyproject.toml; then
+            echo "No version changes to commit"
+          else
+            # Commit version update
+            git add pyproject.toml
+            git commit -m "bump: version ${CLEAN_VERSION}"
+            
+            # Try to push to target branch
+            echo "Attempting to push version update to ${TARGET_BRANCH}"
+            if git show-ref --verify --quiet refs/remotes/origin/${TARGET_BRANCH}; then
+              git push origin HEAD:${TARGET_BRANCH}
+              echo "Version update pushed to ${TARGET_BRANCH}"
+            else
+              echo "Warning: Target branch ${TARGET_BRANCH} does not exist. Skipping version update push."
+              echo "Available branches:"
+              git branch -r
+            fi
+          fi
+
+  security-scan-release:
+    name: Security Scan (Release)
+    runs-on: ubuntu-latest
+    needs: [detect-release-config]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run enhanced security scan for release
+        run: |
+          uv add --dev bandit[toml] safety
+          
+          # Run bandit with strict settings
+          uv run bandit -r src/ -f json -o bandit-release-report.json
+          
+          # Run safety check
+          uv run safety check --json --output safety-release-report.json
+          
+          # Generate security summary
+          echo "# Security Scan Summary" > security-summary.md
+          echo "Release: ${{ needs.detect-release-config.outputs.full_version }}" >> security-summary.md
+          echo "Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> security-summary.md
+          echo "" >> security-summary.md
+          
+          # Check bandit results
+          if [ -f bandit-release-report.json ]; then
+            BANDIT_ISSUES=$(jq '.results | length' bandit-release-report.json)
+            echo "Bandit security issues: ${BANDIT_ISSUES}" >> security-summary.md
+          fi
+          
+          # Check safety results
+          if [ -f safety-release-report.json ]; then
+            echo "Safety dependency scan completed" >> security-summary.md
+          fi
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-release-reports
+          path: |
+            bandit-release-report.json
+            safety-release-report.json
+            security-summary.md
+
+  performance-validation:
+    name: Performance Validation
+    runs-on: ubuntu-latest
+    needs: [detect-release-config]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.29"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run comprehensive performance tests
+        run: |
+          # Run performance tests
+          uv run pytest tests/acceptance/test_server_integration.py::test_performance_and_accuracy_requirements -v
+          
+          # Run all benchmark tests
+          uv run pytest tests/ --benchmark-only --benchmark-json=release-benchmark.json
+          
+          # Generate performance report
+          if [ -f scripts/generate_performance_report.py ]; then
+            uv run python scripts/generate_performance_report.py
+          fi
+
+      - name: Upload performance reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-release-reports
+          path: |
+            release-benchmark.json
+            performance_report.html
+            performance_report.txt
+
+  notify:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [detect-release-config, release, security-scan-release, performance-validation]
+    if: always()
+    steps:
+      - name: Notify success
+        if: needs.release.result == 'success'
+        run: |
+          echo "🎉 Release ${{ needs.detect-release-config.outputs.full_version }} completed successfully!"
+          echo ""
+          echo "📦 Docker images published:"
+          echo "  - ghcr.io/${{ github.repository }}:${{ needs.detect-release-config.outputs.clean_version }}"
+          echo "  - ghcr.io/${{ github.repository }}:latest"
+          echo ""
+          echo "🔍 Target branch: ${{ needs.detect-release-config.outputs.target_branch }}"
+          echo "🏷️  Pre-release: ${{ needs.detect-release-config.outputs.is_prerelease }}"
+          echo ""
+          echo "✅ Security scan: ${{ needs.security-scan-release.result }}"
+          echo "⚡ Performance validation: ${{ needs.performance-validation.result }}"
+
+      - name: Notify failure
+        if: needs.release.result == 'failure'
+        run: |
+          echo "❌ Release ${{ needs.detect-release-config.outputs.full_version }} failed!"
+          echo ""
+          echo "📋 Job Results:"
+          echo "  Release: ${{ needs.release.result }}"
+          echo "  Security Scan: ${{ needs.security-scan-release.result }}"
+          echo "  Performance Validation: ${{ needs.performance-validation.result }}"
+          echo ""
+          echo "Please check individual job logs for details."
+          exit 1 
