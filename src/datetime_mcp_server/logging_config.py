@@ -26,7 +26,7 @@ class StructuredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         # Create the base log entry
-        log_entry = {
+        log_entry: dict[str, Any] = {
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -37,7 +37,7 @@ class StructuredFormatter(logging.Formatter):
 
         # Add exception information if present
         if record.exc_info:
-            log_entry["exception"] = {
+            log_entry["exception"] = {  # type: ignore
                 "type": record.exc_info[0].__name__ if record.exc_info[0] else None,
                 "message": str(record.exc_info[1]) if record.exc_info[1] else None,
                 "traceback": self.formatException(record.exc_info),
@@ -92,11 +92,11 @@ class ServerHealthLogger:
     def __init__(self, logger_name: str = "datetime_mcp_server.health"):
         self.logger = logging.getLogger(logger_name)
 
-    def log_startup(self, transport_mode: str, config: Dict[str, Any] = None):
+    def log_startup(self, transport_mode: str, config: Dict[str, Any] | None = None):
         """Log server startup event"""
         self.logger.info(
             "Server starting up",
-            extra={
+            extra={  # type: ignore
                 "event": "server_startup",
                 "transport_mode": transport_mode,
                 "config": config or {},
@@ -107,7 +107,7 @@ class ServerHealthLogger:
         """Log server shutdown event"""
         self.logger.info(
             "Server shutting down",
-            extra={
+            extra={  # type: ignore
                 "event": "server_shutdown",
                 "reason": reason,
                 "exit_code": exit_code,
@@ -124,7 +124,7 @@ class ServerHealthLogger:
         """Log MCP request processing"""
         self.logger.info(
             f"MCP request processed: {method}",
-            extra={
+            extra={  # type: ignore
                 "event": "mcp_request",
                 "method": method,
                 "params": params,
@@ -137,7 +137,7 @@ class ServerHealthLogger:
         """Log server errors with context"""
         self.logger.error(
             f"Server error in {context}: {str(error)}",
-            extra={
+            extra={  # type: ignore
                 "event": "server_error",
                 "error_type": type(error).__name__,
                 "context": context,
@@ -149,7 +149,7 @@ class ServerHealthLogger:
         """Log memory usage metrics"""
         self.logger.info(
             f"Memory usage: {memory_mb:.1f}MB",
-            extra={
+            extra={  # type: ignore
                 "event": "memory_usage",
                 "memory_mb": memory_mb,
                 "note_count": note_count,
