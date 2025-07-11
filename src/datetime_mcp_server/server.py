@@ -1007,6 +1007,25 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["start_date", "end_date"],
             },
         ),
+        types.Tool(
+            name="get-current-time",
+            description="Get the current time in various formats",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "format": {
+                        "type": "string",
+                        "enum": ["iso", "readable", "unix", "rfc3339"],
+                        "description": "Format to return the time in",
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "Optional timezone (default: local system timezone)",
+                    },
+                },
+                "required": ["format"],
+            },
+        ),
     ]
 
 
@@ -1188,6 +1207,71 @@ async def handle_call_tool(
                     type="text", text=f"Error formatting datetime: {str(e)}"
                 )
             ]
+
+    elif name == "get-current-time":
+        if not arguments:
+            raise ValueError("Missing arguments")
+
+        time_format = arguments.get("format")
+        timezone_str = arguments.get("timezone")
+
+        if not time_format:
+            raise ValueError("Missing format argument")
+
+        # Handle timezone if provided, otherwise use system timezone
+        if timezone_str:
+            try:
+                # Try using zoneinfo first (Python 3.9+)
+                tz = zoneinfo.ZoneInfo(timezone_str)
+                now = datetime.datetime.now(tz)
+            except zoneinfo.ZoneInfoNotFoundError:
+                try:
+                    # Fallback to pytz if available
+                    import pytz
+                    tz = pytz.timezone(timezone_str)
+                    now = datetime.datetime.now(tz)
+                except ImportError:
+                    return [
+                        types.TextContent(
+                            type="text",
+                            text="The pytz library is not available. Using system timezone instead."
+                        ),
+                        types.TextContent(
+                            type="text",
+                            text=format_time(datetime.datetime.now(), time_format)
+                        )
+                    ]
+                except Exception as e:
+                    return [
+                        types.TextContent(
+                            type="text",
+                            text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead."
+                        ),
+                        types.TextContent(
+                            type="text",
+                            text=format_time(datetime.datetime.now(), time_format)
+                        )
+                    ]
+            except Exception as e:
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead."
+                    ),
+                    types.TextContent(
+                        type="text",
+                        text=format_time(datetime.datetime.now(), time_format)
+                    )
+                ]
+        else:
+            now = datetime.datetime.now()
+
+        return [
+            types.TextContent(
+                type="text",
+                text=format_time(now, time_format)
+            )
+        ]
 
     elif name == "format-date":
         if not arguments:

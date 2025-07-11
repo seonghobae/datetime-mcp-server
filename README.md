@@ -1,163 +1,65 @@
-# DateTime MCP Server for RAG Temporal Context
+# DateTime MCP Server
 
-A comprehensive MCP (Model Context Protocol) server that specializes in **temporal context awareness for RAG applications**, while providing precise datetime calculation tools, timezone support, and note management functionality for LLMs.
+A MCP (Model Context Protocol) server that provides datetime functionality along with simple note management.
 
 ## Overview
 
-**Problem**: LLMs don't inherently know what "today" means, making queries like *"What happened yesterday?"* or *"Show me documents from last month"* impossible to process accurately in RAG systems.
+This server implements the MCP protocol and offers various datetime-related tools and resources, including:
 
-**Solution**: This MCP server provides LLMs with precise mathematical date operations to convert relative time expressions into exact dates for accurate document retrieval and temporal reasoning.
+- Current date and time in different formats
+- Date formatting utilities
+- Advanced date calculations for LLM applications
+- Event scheduling prompts
+- Simple note management functionality
 
-### Core Value Proposition
-
-🎯 **Primary: RAG Temporal Context**: Transform user queries with relative time expressions into precise date-filtered searches  
-🕒 **Temporal Awareness**: Give LLMs a reliable "today" reference point and calculation tools  
-🔧 **Mathematical Precision**: No natural language parsing - only exact date arithmetic  
-⚡ **Performance Optimized**: <50ms response time for real-time applications  
-🌍 **Comprehensive Features**: Full timezone support, business day calculations, and note management
-
-### Key Use Cases
-
-#### **RAG Applications** 
-- **Chat Applications**: *"What did we discuss yesterday?"* → Filter documents by exact date  
-- **Document Search**: *"Reports from last quarter"* → Calculate precise date ranges  
-- **Time-based Analytics**: *"Compare this month vs last month"* → Generate exact comparison periods  
-
-#### **Business & Project Management**
-- **Scheduling & Planning**: *"Deadline in 2 weeks"* → Calculate specific target dates  
-- **Project Timelines**: Calculate business days, account for holidays and weekends
-- **Reporting Periods**: Generate accurate date ranges for financial/operational reports
-- **SLA Tracking**: Calculate business day response times, exclude non-working days
-
-#### **General Temporal Operations**
-- **Multi-timezone Coordination**: Handle global team scheduling and coordination
-- **Date Format Conversion**: Transform dates between ISO, RFC3339, Unix timestamps
-- **Leap Year & Edge Cases**: Reliable handling of month-end dates, timezone transitions
-- **Note Management**: Store and retrieve temporal context and calculation metadata
-
-Key features include:
-- **Precise Date Calculations**: Add/subtract days, weeks, months, years with proper edge case handling
-- **Business Day Calculations**: Count business days excluding weekends and holidays  
-- **Date Range Operations**: Calculate "last 3 months" or "next 2 weeks" date ranges
-- **Timezone Support**: Full timezone-aware operations with DST handling
-- **Multiple Date Formats**: ISO, RFC3339, Unix timestamps, custom formats
-- **Comprehensive Note Management**: Full CRUD operations for notes
-- **LLM Guidance Prompts**: Built-in prompts to help LLMs use datetime tools effectively
+The server can be used by any MCP client to access date and time information and manage simple notes. **Enhanced with RAG-optimized temporal context tools** to help LLMs understand relative time expressions like "yesterday", "last month", or "3 days ago".
 
 ## Features
 
-### 🛠️ Date Calculation Tools
+### Resources
 
-#### `calculate-date`
-Add or subtract time periods from dates with proper edge case handling.
+The server provides the following resources:
 
-```json
-{
-  "base_date": "2024-07-15",
-  "operation": "add", 
-  "amount": 30,
-  "unit": "days",
-  "timezone": "UTC"
-}
-// Returns: "2024-08-14"
-```
+- `datetime://current` - The current date and time
+- `datetime://today` - Today's date in ISO format
+- `datetime://time` - The current time in 24-hour format
+- `datetime://timezone-info` - Current timezone information including UTC offset and DST status
+- `datetime://supported-timezones` - List of all supported timezone identifiers grouped by region
+- `note://internal/{name}` - User-created notes
 
-**Supported units**: `days`, `weeks`, `months`, `years`
-**Features**: Leap year handling, month-end adjustments, timezone-aware calculations
+### Tools
 
-#### `calculate-date-range`
-Calculate start and end dates for time periods.
+The server provides the following tools:
 
-```json
-{
-  "base_date": "2024-07-15",
-  "direction": "last",
-  "amount": 3, 
-  "unit": "months",
-  "timezone": "America/New_York"
-}
-// Returns: {"start": "2024-04-15", "end": "2024-07-15"}
-```
+#### Core Tools (Original)
+- `add-note` - Add a new note with a name and content
+- `get-current-time` - Get the current time in various formats (ISO, readable, Unix timestamp, RFC3339)
+- `format-date` - Format a date string according to a specified format pattern
 
-**Directions**: `last` (backwards), `next` (forwards)
-**Use cases**: "Last quarter", "Next 2 weeks", reporting periods
+#### Enhanced Tools
+- `get-note` - Retrieve a note by name
+- `list-notes` - List all available notes  
+- `delete-note` - Remove a note by name
+- `get-current-datetime` - Get current date/time with enhanced timezone and format support
+- `calculate-date` - Add or subtract time periods from a given date
+- `calculate-date-range` - Calculate start and end dates for periods like "last 3 months"
+- `calculate-business-days` - Calculate business days between dates, excluding weekends and holidays
 
-#### `calculate-business-days`
-Count business days between dates, excluding weekends and holidays.
+### Prompts
 
-```json
-{
-  "start_date": "2024-12-20",
-  "end_date": "2024-12-31", 
-  "holidays": ["2024-12-25"],
-  "timezone": "UTC"
-}
-// Returns: {"business_days": 7}
-```
+The server provides the following prompts:
 
-**Features**: Configurable holidays, timezone support, weekend exclusion
-
-#### `get-current-datetime`
-Enhanced current datetime with multiple formats and timezone support.
-
-```json
-{
-  "format": "json",
-  "timezone": "America/New_York"
-}
-// Returns full JSON with iso, readable, unix, rfc3339, timezone info
-```
-
-**Formats**: `iso`, `readable`, `unix`, `rfc3339`, `json`, `custom`
-**Features**: 598+ supported timezones, custom format strings, DST handling
-
-#### `format-date`
-Convert dates between different formats.
-
-```json
-{
-  "date": "2024-07-15",
-  "format": "%B %d, %Y"
-}
-// Returns: "July 15, 2024"
-```
-
-### 📝 Note Management Tools
-
-Complete CRUD operations for note management:
-
-- **`add-note`**: Create new notes
-- **`get-note`**: Retrieve specific notes  
-- **`list-notes`**: List all available notes
-- **`delete-note`**: Remove notes
-
-### 🌍 Timezone Resources
-
-#### `datetime://timezone-info`
-Current timezone information including DST status and UTC offset.
-
-#### `datetime://supported-timezones` 
-Complete list of 598+ supported timezones organized by 17 regions.
-
-#### `datetime://current`
-Current date and time in multiple formats.
-
-### 🧠 LLM Guidance Prompts
-
-#### `datetime-calculation-guide`
-Comprehensive guide showing when and how to use each datetime tool with practical examples.
-
-#### `business-day-rules`
-Detailed explanation of business day calculation rules, holiday handling, and edge cases.
-
-#### `timezone-best-practices`
-Guidelines for timezone-aware operations, DST handling, and common pitfalls to avoid.
+- `summarize-notes` - Creates a summary of all notes
+- `schedule-event` - Helps schedule an event at a specific time
+- `datetime-calculation-guide` - Provides examples of when and how to use date calculation tools
+- `business-day-rules` - Explains business day calculation rules and holiday handling
+- `timezone-best-practices` - Guidelines for timezone-aware date operations
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/seonghobae/datetime-mcp-server.git
+git clone https://github.com/bossjones/datetime-mcp-server.git
 cd datetime-mcp-server
 ```
 
@@ -184,104 +86,104 @@ uv run python -m datetime_mcp_server.server
 
 The server will start and listen on stdin/stdout for MCP protocol messages.
 
-### Example Use Cases
+### Connecting to the Server
 
-#### Basic DateTime Operations
+You can connect to the server using any MCP client. For example, using the MCP CLI:
+
 ```bash
-# Get current date
-uv run mcp tools call get-current-datetime --arguments '{"format": "iso", "timezone": "UTC"}'
-
-# Calculate future date (3 months from now)
-uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "add", "amount": 3, "unit": "months"}'
-
-# Calculate past date (2 weeks ago)
-uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "subtract", "amount": 2, "unit": "weeks"}'
-
-# Format dates for presentation
-uv run mcp tools call format-date --arguments '{"date": "2024-07-15", "format": "%B %d, %Y"}'
+uv run mcp connect datetime-mcp-server
 ```
 
-#### Date Range Calculations
-```bash
-# Get "last quarter" date range
-uv run mcp tools call calculate-date-range --arguments '{"base_date": "2024-07-15", "direction": "last", "amount": 3, "unit": "months"}'
+## Examples
 
-# Get "next 2 weeks" date range
-uv run mcp tools call calculate-date-range --arguments '{"base_date": "2024-07-15", "direction": "next", "amount": 2, "unit": "weeks"}'
+### Using the Server with MCP CLI
+
+List available resources:
+```bash
+uv run mcp resources list
 ```
 
-#### Business Day Calculations
+Read a datetime resource:
 ```bash
-# Count business days for a project
-uv run mcp tools call calculate-business-days --arguments '{"start_date": "2024-07-15", "end_date": "2024-10-15", "holidays": ["2024-09-02"]}'
-
-# Calculate business days excluding weekends and holidays
-uv run mcp tools call calculate-business-days --arguments '{"start_date": "2024-12-20", "end_date": "2024-12-31", "holidays": ["2024-12-25"]}'
+uv run mcp resources read datetime://current
 ```
 
-#### Timezone Operations
+Add a note:
 ```bash
-# Get current time in multiple timezones
-uv run mcp tools call get-current-datetime --arguments '{"format": "json", "timezone": "Asia/Tokyo"}'
-
-# Get timezone information
-uv run mcp resources read datetime://timezone-info
-
-# List all supported timezones
-uv run mcp resources read datetime://supported-timezones
+uv run mcp tools call add-note --arguments '{"name": "meeting", "content": "Team meeting at 3pm"}'
 ```
 
-#### Advanced: RAG Temporal Query Processing
+Get the current time in ISO format:
 ```bash
-# User asks: "What happened yesterday?"
-# LLM workflow:
-
-# 1. Get today's date as reference point
-today=$(uv run mcp tools call get-current-datetime --arguments '{"format": "iso", "timezone": "UTC"}')
-# Returns: "2024-07-15T14:30:00+00:00"
-
-# 2. Calculate "yesterday" 
-yesterday=$(uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "subtract", "amount": 1, "unit": "days"}')
-# Returns: "2024-07-14"
-
-# 3. Now LLM can query RAG system with exact date filter:
-# search_documents(date_filter="2024-07-14")
+uv run mcp tools call get-current-time --arguments '{"format": "iso"}'
 ```
 
-#### Advanced: RAG Date Range Queries
+Format a date:
 ```bash
-# User asks: "Show me reports from last quarter"
-# LLM workflow:
+uv run mcp tools call format-date --arguments '{"date": "2023-10-15", "format": "%B %d, %Y"}'
+```
 
-# 1. Get current date
+## Advanced Usage: RAG Temporal Context
+
+This server provides specialized tools for LLM applications that need to understand relative time expressions in RAG (Retrieval-Augmented Generation) scenarios.
+
+### Problem Solved
+
+When users ask questions like:
+- "What happened yesterday?"
+- "Show me documents from last month"
+- "Find meetings scheduled for next week"
+
+LLMs need to convert these relative expressions into exact dates for precise document filtering and retrieval.
+
+### RAG Workflow Example
+
+```bash
+# 1. Get current reference point
 current=$(uv run mcp tools call get-current-datetime --arguments '{"format": "iso"}')
 
-# 2. Calculate last quarter range  
-quarter_range=$(uv run mcp tools call calculate-date-range --arguments '{"base_date": "2024-07-15", "direction": "last", "amount": 3, "unit": "months"}')
-# Returns: {"start": "2024-04-15", "end": "2024-07-15"}
+# 2. Calculate "last month" range
+uv run mcp tools call calculate-date-range --arguments '{
+  "base_date": "'$current'",
+  "direction": "last", 
+  "amount": 1, 
+  "unit": "months"
+}'
 
-# 3. RAG system searches with date range:
-# search_documents(start_date="2024-04-15", end_date="2024-07-15", content_type="reports")
+# 3. Use the range for document filtering
+# Output: {"start": "2024-06-11", "end": "2024-07-11"}
 ```
 
-#### Advanced: Business Day Calculations for RAG
+### Advanced Date Calculations
+
+#### Business Days
 ```bash
-# User asks: "What happened in the last 10 business days?"
-# LLM workflow:
+# Calculate business days excluding holidays
+uv run mcp tools call calculate-business-days --arguments '{
+  "start_date": "2024-12-20",
+  "end_date": "2024-12-31", 
+  "holidays": ["2024-12-25", "2024-12-26"]
+}'
+```
 
-# 1. Get today's date
-today=$(uv run mcp tools call get-current-datetime --arguments '{"format": "iso"}')
+#### Timezone-Aware Operations
+```bash
+# Get current time in different timezone
+uv run mcp tools call get-current-datetime --arguments '{
+  "format": "json", 
+  "timezone": "Asia/Tokyo"
+}'
+```
 
-# 2. Calculate 10 business days ago  
-start_date=$(uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "subtract", "amount": 14, "unit": "days"}')
-# Start with 14 calendar days to ensure we get 10 business days
-
-# 3. Verify exact business day count
-business_days=$(uv run mcp tools call calculate-business-days --arguments '{"start_date": "2024-07-01", "end_date": "2024-07-15", "holidays": ["2024-07-04"]}')
-# Returns: {"business_days": 10}
-
-# 4. RAG search with business-day-aware filtering
-# search_documents(date_range="business_days", start="2024-07-01", end="2024-07-15")
+#### Flexible Date Arithmetic
+```bash
+# Add 3 months to a specific date
+uv run mcp tools call calculate-date --arguments '{
+  "base_date": "2024-07-15",
+  "operation": "add",
+  "amount": 3,
+  "unit": "months"
+}'
 ```
 
 ## Development
@@ -289,209 +191,111 @@ business_days=$(uv run mcp tools call calculate-business-days --arguments '{"sta
 ### Installing Development Dependencies
 
 ```bash
+# Install all dependencies including development dependencies
 uv sync --dev
 ```
 
 ### Running Tests
 
-The project includes comprehensive test coverage:
+To run the tests:
 
 ```bash
-# Run all tests (37 total tests)
-./run_tests.sh
+uv run pytest tests/
+```
 
-# Unit tests (23 tests)
+#### Unit Tests
+
+Unit tests verify that individual server functions work correctly:
+
+```bash
 uv run pytest tests/acceptance/test_server.py
+```
 
-# Integration tests (14 tests)  
+#### Integration Tests
+
+Integration tests verify that the server implements the MCP protocol correctly:
+
+```bash
 uv run pytest tests/acceptance/test_server_integration.py
 ```
 
-#### Test Coverage
-
-- **Unit Tests**: Individual tool functionality, error handling, edge cases
-- **Integration Tests**: End-to-end workflows, complex scenarios, performance validation
-- **Edge Case Testing**: Leap years, month-end dates, timezone transitions, holiday handling
-- **Performance Testing**: All operations meet <50ms requirement
-
-### Architecture
-
-The server is built with:
-- **Pure Python**: No external dependencies, uses only standard library
-- **Mathematical Operations**: No natural language parsing, only precise date arithmetic
-- **Standard Library**: `datetime`, `zoneinfo`, `calendar` for reliability
-- **MCP Protocol**: Full implementation of resources, tools, and prompts
-- **Async Support**: Built on asyncio for performance
-
-## API Reference
-
-### Tool Schemas
-
-All tools follow consistent JSON schema patterns:
-
-```typescript
-// calculate-date
-{
-  base_date: string,        // ISO date format
-  operation: "add" | "subtract",
-  amount: number,
-  unit: "days" | "weeks" | "months" | "years",
-  timezone?: string         // Optional IANA timezone
-}
-
-// calculate-business-days  
-{
-  start_date: string,       // ISO date format
-  end_date: string,         // ISO date format  
-  holidays?: string[],      // Array of ISO dates
-  timezone?: string         // Optional IANA timezone
-}
-
-// get-current-datetime
-{
-  format: "iso" | "readable" | "unix" | "rfc3339" | "json" | "custom",
-  timezone?: string,        // Optional IANA timezone
-  custom_format?: string    // Required when format="custom"
-}
-```
-
-### Resource URIs
-
-```
-datetime://current              # Current date/time
-datetime://timezone-info        # Current timezone info
-datetime://supported-timezones  # All supported timezones
-note://internal/{name}          # Individual notes
-```
-
-### Error Handling
-
-All tools include comprehensive error handling:
-- Invalid date formats
-- Invalid timezone identifiers  
-- Invalid date ranges
-- Missing required parameters
-- Graceful fallbacks with informative error messages
-
-## Performance & Reliability
-
-- **Response Time**: All operations <50ms (p95)
-- **Accuracy**: 100% mathematical precision
-- **Timezone Data**: 598+ timezones with automatic DST handling
-- **Edge Cases**: Comprehensive leap year, month-end, and boundary handling
-- **No External Dependencies**: Uses only Python standard library for reliability
-
-## Examples
-
-### Complex RAG Temporal Query Workflow
-
-```python
-# Scenario: User asks "Compare our sales performance this month vs last month, 
-# excluding weekends and holidays"
-
-# 1. Establish temporal context - get current date
-current = await call_tool("get-current-datetime", {
-    "format": "iso",
-    "timezone": "America/New_York"
-})
-# Returns: "2024-07-15T14:30:00-04:00"
-
-# 2. Calculate "this month" range  
-this_month_range = await call_tool("calculate-date-range", {
-    "base_date": current.split('T')[0],
-    "direction": "next",
-    "amount": 0,
-    "unit": "months"  # Current month
-})
-# Adjust to get current month start to today
-this_month_start = current.split('T')[0].replace('-15', '-01')  # 2024-07-01
-
-# 3. Calculate "last month" range
-last_month_range = await call_tool("calculate-date-range", {
-    "base_date": this_month_start,
-    "direction": "last", 
-    "amount": 1,
-    "unit": "months"
-})
-# Returns: {"start": "2024-06-01", "end": "2024-06-30"}
-
-# 4. Calculate business days for this month (excluding weekends/holidays)
-this_month_business_days = await call_tool("calculate-business-days", {
-    "start_date": this_month_start,
-    "end_date": current.split('T')[0],
-    "holidays": ["2024-07-04"],  # Independence Day
-    "timezone": "America/New_York"
-})
-
-# 5. Calculate business days for last month  
-last_month_business_days = await call_tool("calculate-business-days", {
-    "start_date": last_month_range["start"],
-    "end_date": last_month_range["end"], 
-    "holidays": [],  # No holidays in June 2024
-    "timezone": "America/New_York"
-})
-
-# 6. Store comparison metadata as note
-comparison_metadata = {
-    "this_month": {
-        "period": f"{this_month_start} to {current.split('T')[0]}",
-        "business_days": this_month_business_days["business_days"]
-    },
-    "last_month": {
-        "period": f"{last_month_range['start']} to {last_month_range['end']}",
-        "business_days": last_month_business_days["business_days"]
-    }
-}
-
-await call_tool("add-note", {
-    "name": "monthly-comparison-context",
-    "content": f"Sales comparison context: {json.dumps(comparison_metadata, indent=2)}"
-})
-
-# 7. Now RAG system can search with precise temporal filters:
-# this_month_sales = search_sales_documents(
-#     start_date=this_month_start,
-#     end_date=current.split('T')[0], 
-#     business_days_only=True,
-#     holidays=["2024-07-04"]
-# )
-# 
-# last_month_sales = search_sales_documents(
-#     start_date=last_month_range["start"],
-#     end_date=last_month_range["end"],
-#     business_days_only=True
-# )
-# 
-# # Normalize by business days for fair comparison
-# this_month_daily_avg = this_month_sales.total / this_month_business_days["business_days"]
-# last_month_daily_avg = last_month_sales.total / last_month_business_days["business_days"]
-```
-
-### LLM Guidance Usage
+### Dependency Management
 
 ```bash
-# Get comprehensive tool usage guide
-uv run mcp prompts get datetime-calculation-guide --arguments '{"scenario": "deadlines"}'
+# Add a production dependency
+uv add package_name
 
-# Learn business day calculation rules
-uv run mcp prompts get business-day-rules --arguments '{"region": "standard"}'
+# Add a development dependency
+uv add --dev package_name
 
-# Understand timezone best practices
-uv run mcp prompts get timezone-best-practices --arguments '{"operation_type": "calculation"}'
+# Sync dependencies from lockfile
+uv sync --frozen
+
+# List outdated packages
+uv outdated
 ```
+
+## Makefile Tasks
+
+The project includes several Makefile tasks to streamline development:
+
+```bash
+# Sync all dependencies with frozen lockfile
+make uv-sync-all
+
+# Sync only development dependencies
+make uv-sync-dev
+
+# Run tests
+make test
+```
+
+## Building and Publishing
+
+To prepare the package for distribution:
+
+1. Sync dependencies and update lockfile:
+```bash
+uv sync
+```
+
+2. Build package distributions:
+```bash
+uv build
+```
+
+This will create source and wheel distributions in the `dist/` directory.
+
+3. Publish to PyPI:
+```bash
+uv publish
+```
+
+Note: You'll need to set PyPI credentials via environment variables or command flags:
+- Token: `--token` or `UV_PUBLISH_TOKEN`
+- Or username/password: `--username`/`UV_PUBLISH_USERNAME` and `--password`/`UV_PUBLISH_PASSWORD`
+
+## Debugging
+
+Since MCP servers run over stdio, debugging can be challenging. For the best debugging
+experience, we strongly recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector).
+
+You can launch the MCP Inspector via [`npm`](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) with this command:
+
+```bash
+npx @modelcontextprotocol/inspector uv --directory /path/to/datetime-mcp-server run datetime-mcp-server
+```
+
+Upon launching, the Inspector will display a URL that you can access in your browser to begin debugging.
+
+## License
+
+MIT
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass: `./run_tests.sh`
+3. Make your changes
+4. Run the tests with `uv run pytest`
 5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for version history and release notes.

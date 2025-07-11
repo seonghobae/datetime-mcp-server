@@ -59,7 +59,7 @@ dev = [
 ]
 
 [project.scripts]
-datetime-mcp-server = "datetime_mcp_server.main:main"
+datetime-mcp-server = "datetime_mcp_server:main"
 
 [tool.pytest.ini_options]
 markers = [
