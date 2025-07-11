@@ -1,15 +1,31 @@
-# DateTime MCP Server
+# DateTime MCP Server for RAG Temporal Context
 
-A comprehensive MCP (Model Context Protocol) server that provides precise datetime calculation tools for LLMs, along with timezone support and note management functionality.
+A specialized MCP (Model Context Protocol) server that provides **temporal context awareness** for LLMs, enabling them to understand relative time expressions like "yesterday", "today", and "tomorrow" in RAG (Retrieval-Augmented Generation) applications.
 
 ## Overview
 
-This server implements the MCP protocol and offers mathematical date operations that LLMs can call when they need accurate temporal calculations. Instead of parsing natural language date expressions, it provides precise mathematical date operations for reliable, consistent results.
+**Problem**: LLMs don't inherently know what "today" means, making queries like *"What happened yesterday?"* or *"Show me documents from last month"* impossible to process accurately in RAG systems.
+
+**Solution**: This MCP server provides LLMs with precise mathematical date operations to convert relative time expressions into exact dates for accurate document retrieval and temporal reasoning.
+
+### Core Value Proposition
+
+🎯 **For RAG Applications**: Transform user queries with relative time expressions into precise date-filtered searches  
+🕒 **Temporal Context**: Give LLMs a reliable "today" reference point and calculation tools  
+🔧 **Mathematical Precision**: No natural language parsing - only exact date arithmetic  
+⚡ **Performance Optimized**: <50ms response time for real-time chat applications  
+
+### Key Use Cases
+
+- **Chat Applications**: *"What did we discuss yesterday?"* → Filter documents by exact date  
+- **Document Search**: *"Reports from last quarter"* → Calculate precise date ranges  
+- **Time-based Analytics**: *"Compare this month vs last month"* → Generate exact comparison periods  
+- **Scheduling & Planning**: *"Deadline in 2 weeks"* → Calculate specific target dates  
 
 Key features include:
 - **Precise Date Calculations**: Add/subtract days, weeks, months, years with proper edge case handling
-- **Business Day Calculations**: Count business days excluding weekends and holidays
-- **Date Range Operations**: Calculate "last 3 months" or "next 2 weeks" date ranges  
+- **Business Day Calculations**: Count business days excluding weekends and holidays  
+- **Date Range Operations**: Calculate "last 3 months" or "next 2 weeks" date ranges
 - **Timezone Support**: Full timezone-aware operations with DST handling
 - **Multiple Date Formats**: ISO, RFC3339, Unix timestamps, custom formats
 - **Comprehensive Note Management**: Full CRUD operations for notes
@@ -128,7 +144,7 @@ Guidelines for timezone-aware operations, DST handling, and common pitfalls to a
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/bossjones/datetime-mcp-server.git
+git clone https://github.com/seonghobae/datetime-mcp-server.git
 cd datetime-mcp-server
 ```
 
@@ -156,6 +172,59 @@ uv run python -m datetime_mcp_server.server
 The server will start and listen on stdin/stdout for MCP protocol messages.
 
 ### Example Use Cases
+
+#### RAG Temporal Query Processing 
+```bash
+# User asks: "What happened yesterday?"
+# LLM workflow:
+
+# 1. Get today's date as reference point
+today=$(uv run mcp tools call get-current-datetime --arguments '{"format": "iso", "timezone": "UTC"}')
+# Returns: "2024-07-15T14:30:00+00:00"
+
+# 2. Calculate "yesterday" 
+yesterday=$(uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "subtract", "amount": 1, "unit": "days"}')
+# Returns: "2024-07-14"
+
+# 3. Now LLM can query RAG system with exact date filter:
+# search_documents(date_filter="2024-07-14")
+```
+
+#### RAG Date Range Queries
+```bash
+# User asks: "Show me reports from last quarter"
+# LLM workflow:
+
+# 1. Get current date
+current=$(uv run mcp tools call get-current-datetime --arguments '{"format": "iso"}')
+
+# 2. Calculate last quarter range  
+quarter_range=$(uv run mcp tools call calculate-date-range --arguments '{"base_date": "2024-07-15", "direction": "last", "amount": 3, "unit": "months"}')
+# Returns: {"start": "2024-04-15", "end": "2024-07-15"}
+
+# 3. RAG system searches with date range:
+# search_documents(start_date="2024-04-15", end_date="2024-07-15", content_type="reports")
+```
+
+#### Business Day Calculations for RAG
+```bash
+# User asks: "What happened in the last 10 business days?"
+# LLM workflow:
+
+# 1. Get today's date
+today=$(uv run mcp tools call get-current-datetime --arguments '{"format": "iso"}')
+
+# 2. Calculate 10 business days ago  
+start_date=$(uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "subtract", "amount": 14, "unit": "days"}')
+# Start with 14 calendar days to ensure we get 10 business days
+
+# 3. Verify exact business day count
+business_days=$(uv run mcp tools call calculate-business-days --arguments '{"start_date": "2024-07-01", "end_date": "2024-07-15", "holidays": ["2024-07-04"]}')
+# Returns: {"business_days": 10}
+
+# 4. RAG search with business-day-aware filtering
+# search_documents(date_range="business_days", start="2024-07-01", end="2024-07-15")
+```
 
 #### Project Planning
 ```bash
@@ -286,35 +355,88 @@ All tools include comprehensive error handling:
 
 ## Examples
 
-### Complex Workflow Example
+### Complex RAG Temporal Query Workflow
 
 ```python
-# 1. Get current date in specific timezone
+# Scenario: User asks "Compare our sales performance this month vs last month, 
+# excluding weekends and holidays"
+
+# 1. Establish temporal context - get current date
 current = await call_tool("get-current-datetime", {
     "format": "iso",
     "timezone": "America/New_York"
 })
+# Returns: "2024-07-15T14:30:00-04:00"
 
-# 2. Calculate project phases
-phase1_end = await call_tool("calculate-date", {
+# 2. Calculate "this month" range  
+this_month_range = await call_tool("calculate-date-range", {
     "base_date": current.split('T')[0],
-    "operation": "add", 
-    "amount": 14,
-    "unit": "days"
+    "direction": "next",
+    "amount": 0,
+    "unit": "months"  # Current month
+})
+# Adjust to get current month start to today
+this_month_start = current.split('T')[0].replace('-15', '-01')  # 2024-07-01
+
+# 3. Calculate "last month" range
+last_month_range = await call_tool("calculate-date-range", {
+    "base_date": this_month_start,
+    "direction": "last", 
+    "amount": 1,
+    "unit": "months"
+})
+# Returns: {"start": "2024-06-01", "end": "2024-06-30"}
+
+# 4. Calculate business days for this month (excluding weekends/holidays)
+this_month_business_days = await call_tool("calculate-business-days", {
+    "start_date": this_month_start,
+    "end_date": current.split('T')[0],
+    "holidays": ["2024-07-04"],  # Independence Day
+    "timezone": "America/New_York"
 })
 
-# 3. Calculate business days for the phase
-business_days = await call_tool("calculate-business-days", {
-    "start_date": current.split('T')[0],
-    "end_date": phase1_end,
-    "holidays": ["2024-12-25", "2025-01-01"]
+# 5. Calculate business days for last month  
+last_month_business_days = await call_tool("calculate-business-days", {
+    "start_date": last_month_range["start"],
+    "end_date": last_month_range["end"], 
+    "holidays": [],  # No holidays in June 2024
+    "timezone": "America/New_York"
 })
 
-# 4. Store project timeline as note
+# 6. Store comparison metadata as note
+comparison_metadata = {
+    "this_month": {
+        "period": f"{this_month_start} to {current.split('T')[0]}",
+        "business_days": this_month_business_days["business_days"]
+    },
+    "last_month": {
+        "period": f"{last_month_range['start']} to {last_month_range['end']}",
+        "business_days": last_month_business_days["business_days"]
+    }
+}
+
 await call_tool("add-note", {
-    "name": "project-timeline",
-    "content": f"Phase 1: {business_days['business_days']} business days"
+    "name": "monthly-comparison-context",
+    "content": f"Sales comparison context: {json.dumps(comparison_metadata, indent=2)}"
 })
+
+# 7. Now RAG system can search with precise temporal filters:
+# this_month_sales = search_sales_documents(
+#     start_date=this_month_start,
+#     end_date=current.split('T')[0], 
+#     business_days_only=True,
+#     holidays=["2024-07-04"]
+# )
+# 
+# last_month_sales = search_sales_documents(
+#     start_date=last_month_range["start"],
+#     end_date=last_month_range["end"],
+#     business_days_only=True
+# )
+# 
+# # Normalize by business days for fair comparison
+# this_month_daily_avg = this_month_sales.total / this_month_business_days["business_days"]
+# last_month_daily_avg = last_month_sales.total / last_month_business_days["business_days"]
 ```
 
 ### LLM Guidance Usage
