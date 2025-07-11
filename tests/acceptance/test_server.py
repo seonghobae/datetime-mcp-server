@@ -422,11 +422,15 @@ async def test_call_add_note_tool_missing_args(reset_server_state: None) -> None
     Args:
         reset_server_state: Fixture to reset the server state before the test.
     """
-    with pytest.raises(ValueError, match="Missing arguments"):
-        await handle_call_tool("add-note", None)
+    # Test missing arguments - should return error text, not raise exception
+    result = await handle_call_tool("add-note", None)
+    assert len(result) == 1
+    assert "Error adding note: Missing arguments" in result[0].text
 
-    with pytest.raises(ValueError, match="Missing name or content"):
-        await handle_call_tool("add-note", {"name": "new-note"})
+    # Test missing content - should return error text, not raise exception
+    result = await handle_call_tool("add-note", {"name": "new-note"})
+    assert len(result) == 1
+    assert "Error adding note: Missing name or content" in result[0].text
 
 
 @pytest.mark.asyncio
@@ -539,8 +543,10 @@ async def test_call_unknown_tool(reset_server_state: None) -> None:
     Args:
         reset_server_state: Fixture to reset the server state before the test.
     """
-    with pytest.raises(ValueError, match="Unknown tool: unknown-tool"):
-        await handle_call_tool("unknown-tool", {})
+    # Test unknown tool - should return error text, not raise exception
+    result = await handle_call_tool("unknown-tool", {})
+    assert len(result) == 1
+    assert "Error: Unknown tool 'unknown-tool'" in result[0].text
 
 
 @pytest.mark.asyncio

@@ -405,6 +405,9 @@ async def mcp_endpoint(request: Request):
             else:
                 raise HTTPException(status_code=404, detail=f"Unknown method: {method}")
 
+        except HTTPException as e:
+            # Re-raise HTTPException to be handled by FastAPI
+            raise e
         except Exception as e:
             logger.error(f"Error handling MCP method {method}: {e}")
             return JSONResponse(
@@ -419,6 +422,9 @@ async def mcp_endpoint(request: Request):
         # Return JSON-RPC response
         return JSONResponse({"jsonrpc": "2.0", "result": result, "id": request_id})
 
+    except HTTPException as e:
+        # Re-raise HTTPException to be handled by FastAPI with correct status code
+        raise e
     except Exception as e:
         logger.error(f"Unexpected error in MCP endpoint: {e}")
         return JSONResponse(

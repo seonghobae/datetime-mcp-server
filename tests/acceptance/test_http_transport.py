@@ -265,9 +265,6 @@ class TestHTTPTransport:
         def test_sse_headers_verification():
             """Verify SSE headers by making a GET request with immediate connection close."""
             try:
-                # Use a custom httpx client with very short timeout
-                import httpx
-                
                 # Mock the base URL to avoid connection issues
                 with patch('httpx.Client') as mock_client:
                     mock_response = AsyncMock()
@@ -309,10 +306,16 @@ class TestHTTPTransport:
 
     def test_cors_headers(self):
         """Test CORS headers are present."""
-        response = self.client.options("/mcp")
+        # Test CORS headers on actual requests with Origin header
+        response = self.client.get("/", headers={"Origin": "http://localhost:3000"})
         assert response.status_code == 200
         # CORS headers should be present for all origins
-        response = self.client.get("/", headers={"Origin": "http://localhost:3000"})
+        assert "access-control-allow-origin" in response.headers
+        
+        # Test CORS on POST request to /mcp endpoint
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+        response = self.client.post("/mcp", json=request_data, headers={"Origin": "http://localhost:3000"})
+        assert response.status_code == 200
         assert "access-control-allow-origin" in response.headers
 
     def test_metrics_middleware(self):

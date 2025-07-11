@@ -30,7 +30,7 @@ class TestDatetimeMCPPerformance:
 
         result = benchmark(run_list_tools)
         assert len(result) > 0
-        assert len(result) == 9  # Expected number of tools
+        assert len(result) == 10  # Expected number of tools
 
     @pytest.mark.benchmark
     def test_benchmark_list_resources(self, benchmark):
@@ -41,7 +41,7 @@ class TestDatetimeMCPPerformance:
 
         result = benchmark(run_list_resources)
         assert len(result) > 0
-        assert len(result) == 5  # Expected number of resources
+        assert len(result) >= 5  # At least 5 datetime resources (may include dynamic note resources)
 
     @pytest.mark.benchmark
     def test_benchmark_list_prompts(self, benchmark):

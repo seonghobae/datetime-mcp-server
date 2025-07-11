@@ -5,15 +5,11 @@ and resource cleanup improvements.
 
 import asyncio
 import pytest
-import threading
 import time
-import weakref
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
-import json
 
 import psutil
-import httpx
 
 from datetime_mcp_server.server import (
     notes, notes_lock, health_metrics, health_metrics_lock,
@@ -23,7 +19,7 @@ from datetime_mcp_server.server import (
 )
 from datetime_mcp_server.http_server import (
     sse_manager, metrics, metrics_lock, 
-    MAX_RESPONSE_TIMES, MAX_ENDPOINT_TRACKING
+    MAX_RESPONSE_TIMES
 )
 
 
@@ -361,9 +357,9 @@ class TestPerformanceStability:
                 else:
                     # Read operations
                     with notes_lock:
-                        note_count = len(notes)
+                        len(notes)  # Read operation to check length
                         if notes:
-                            sample_note = next(iter(notes.values()))
+                            next(iter(notes.values()))  # Read operation to get a sample
                 
                 # Small delay to simulate processing
                 time.sleep(0.001)
