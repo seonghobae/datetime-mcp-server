@@ -102,7 +102,7 @@ def main():
         try:
             logger = get_logger("main")
             logger.error(f"Fatal error in main: {e}", exc_info=True)
-        except:
+        except Exception:
             pass  # Logging may not be set up yet
         sys.exit(1)
 

@@ -185,7 +185,6 @@ class TestHTTPTransport:
         """Test Server-Sent Events streaming endpoint."""
         # Note: This is a basic test for SSE endpoint existence
         # Full streaming tests would require more complex async testing
-        import pytest
         
         # This test has a timeout applied globally through pytest settings
         with self.client.stream("GET", "/mcp/stream") as response:

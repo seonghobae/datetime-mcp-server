@@ -8,7 +8,6 @@ for better debugging and monitoring capabilities.
 import logging
 import logging.handlers
 import sys
-import os
 import json
 from datetime import datetime
 from typing import Dict, Any, Optional

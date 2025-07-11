@@ -14,8 +14,7 @@ import json
 import subprocess
 import time
 import random
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 
 class MCPStressTester:
     def __init__(self, duration=600, request_interval=0.5):
@@ -163,7 +162,7 @@ class MCPStressTester:
         print(f"[{datetime.now()}] Request interval: {self.request_interval} seconds")
         
         # Start server
-        pid = self.start_server()
+        self.start_server()
         
         self.active = True
         

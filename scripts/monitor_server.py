@@ -15,7 +15,6 @@ import psutil
 import time
 import json
 import signal
-import sys
 import subprocess
 import threading
 from datetime import datetime
@@ -217,7 +216,7 @@ class ServerMonitor:
         
         # Memory analysis
         memory_values = [m['memory_rss_mb'] for m in self.metrics]
-        print(f"Memory Usage:")
+        print("Memory Usage:")
         print(f"  Initial: {memory_values[0]:.1f}MB")
         print(f"  Final: {memory_values[-1]:.1f}MB") 
         print(f"  Peak: {max(memory_values):.1f}MB")
@@ -226,13 +225,13 @@ class ServerMonitor:
         # CPU analysis
         cpu_values = [m['cpu_percent'] for m in self.metrics if m['cpu_percent'] > 0]
         if cpu_values:
-            print(f"CPU Usage:")
+            print("CPU Usage:")
             print(f"  Average: {sum(cpu_values)/len(cpu_values):.1f}%")
             print(f"  Peak: {max(cpu_values):.1f}%")
         
         # Thread analysis
         thread_values = [m['num_threads'] for m in self.metrics]
-        print(f"Thread Count:")
+        print("Thread Count:")
         print(f"  Initial: {thread_values[0]}")
         print(f"  Final: {thread_values[-1]}")
         print(f"  Peak: {max(thread_values)}")
@@ -240,13 +239,13 @@ class ServerMonitor:
         # File descriptor analysis
         fd_values = [m['num_file_descriptors'] for m in self.metrics if m['num_file_descriptors'] > 0]
         if fd_values:
-            print(f"File Descriptors:")
+            print("File Descriptors:")
             print(f"  Initial: {fd_values[0]}")
             print(f"  Final: {fd_values[-1]}")
             print(f"  Peak: {max(fd_values)}")
         
         # Stability assessment
-        print(f"\nStability Assessment:")
+        print("\nStability Assessment:")
         memory_growth = memory_values[-1] - memory_values[0]
         if memory_growth > 20:  # 20MB growth
             print(f"  ❌ MEMORY LEAK SUSPECTED: {memory_growth:.1f}MB growth")

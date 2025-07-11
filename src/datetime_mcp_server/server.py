@@ -5,7 +5,6 @@ import json
 import zoneinfo
 import signal
 import sys
-import logging
 import psutil
 import os
 from typing import Dict, List, Optional
