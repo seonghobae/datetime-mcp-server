@@ -223,6 +223,77 @@ Integration tests verify that the server implements the MCP protocol correctly:
 uv run pytest tests/acceptance/test_server_integration.py
 ```
 
+### Local Pre-commit Validation
+
+This project includes a local validation system that runs the **same checks as GitHub Actions** before you commit, allowing you to catch issues early and avoid CI failures.
+
+#### Quick Setup
+
+1. **Install pre-commit hooks** (one-time setup):
+```bash
+# Using make (recommended)
+make setup-hooks
+
+# Or using just (if you have just installed)
+just setup-hooks
+```
+
+2. **Your commits will now automatically run validation!** 🎉
+
+#### Manual Validation Commands
+
+You can also run validation manually before committing:
+
+```bash
+# Run complete GitHub Actions equivalent validation
+make pre-commit-validate
+# OR: just pre-commit-validate
+
+# Run individual checks
+make lint-ci          # Ruff linting (same as CI)
+make format-check     # Code formatting check (same as CI) 
+make typecheck-ci     # Type checking with pyright (same as CI)
+
+# Quick fixes
+make fix              # Auto-fix formatting and linting issues
+```
+
+#### Validation Results
+
+- ✅ **Linting**: `ruff check .` - Must pass to commit
+- ✅ **Formatting**: `ruff format --check .` - Must pass to commit  
+- ⚠️ **Type Checking**: `pyright src/ tests/` - Warnings allowed for feature branches
+
+#### Bypassing Validation (Emergency)
+
+If you need to commit urgently and bypass validation:
+
+```bash
+git commit --no-verify -m "emergency fix: brief description"
+```
+
+⚠️ **Use sparingly!** The CI will still run the same checks.
+
+#### Available Commands Summary
+
+| Command | Purpose | GitHub Actions Equivalent |
+|---------|---------|---------------------------|
+| `make pre-commit-validate` | Complete validation | ✅ Full lint-and-typecheck job |
+| `make lint-ci` | Linting only | ✅ `ruff check .` |
+| `make format-check` | Format check only | ✅ `ruff format --check .` |
+| `make typecheck-ci` | Type check only | ✅ `pyright src/ tests/` |
+| `make fix` | Auto-fix issues | 🔧 `ruff format . && ruff check . --fix` |
+| `make check-ci` | Validation + tests | ✅ Complete CI equivalent |
+
+#### Development Workflow
+
+1. **Write code** 📝
+2. **Run `make fix`** to auto-fix any formatting/linting issues 🔧
+3. **Commit normally** - validation runs automatically! ✅
+4. **Push confidently** - no CI surprises! 🚀
+
+The validation system ensures your local environment matches the GitHub Actions CI exactly, providing fast feedback and preventing broken builds.
+
 ### Dependency Management
 
 ```bash

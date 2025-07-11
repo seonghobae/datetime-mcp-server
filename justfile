@@ -22,17 +22,54 @@ test-coverage:
 test-watch:
     uv run pytest-watch tests/
 
-# Run linting checks
+# === GitHub Actions Equivalent Commands ===
+
+# Run ruff linter (GitHub Actions equivalent)
+lint-ci:
+    @echo "🔍 Running ruff linter (GitHub Actions equivalent)..."
+    uv run ruff check .
+
+# Check code formatting (GitHub Actions equivalent)
+format-check:
+    @echo "📝 Checking code formatting (GitHub Actions equivalent)..."
+    uv run ruff format --check .
+
+# Run type checking with pyright (GitHub Actions equivalent)
+typecheck-ci:
+    @echo "📦 Installing pyright for type checking..."
+    uv add --dev pyright
+    @echo "🔍 Running type checking (GitHub Actions equivalent)..."
+    uv run pyright src/ tests/
+
+# Complete pre-commit validation (runs same as GitHub Actions)
+pre-commit-validate:
+    @echo "🚀 Running complete pre-commit validation (GitHub Actions equivalent)..."
+    @just lint-ci
+    @just format-check
+    @just typecheck-ci
+    @echo "✅ All pre-commit checks passed!"
+
+# === Original Commands (kept for compatibility) ===
+
+# Run linting checks (original)
 lint:
     uv run ruff check src/ tests/
 
-# Run type checking
+# Run type checking (original with mypy)
 typecheck:
     uv run mypy src/ tests/
 
-# Format code using ruff
+# Format code using ruff (applies formatting)
 format:
     uv run ruff format src/ tests/
+
+# Auto-fix formatting and linting issues
+fix:
+    @echo "🔧 Auto-fixing code formatting..."
+    uv run ruff format .
+    @echo "🔧 Auto-fixing linting issues..."
+    uv run ruff check . --fix
+    @echo "✅ Auto-fix completed!"
 
 # Clean up cache directories
 clean:
@@ -52,6 +89,9 @@ build:
 # Run all quality checks (format, lint, typecheck, test)
 check: format lint typecheck test
 
+# Run GitHub Actions equivalent checks locally
+check-ci: pre-commit-validate test
+
 # Create a new release (requires bump2version)
 release version:
     uv run bump2version {{version}}
@@ -68,7 +108,19 @@ docs:
 
 # Install pre-commit hooks
 setup-hooks:
-    uv run pre-commit install
+    @echo "🔧 Setting up pre-commit hooks..."
+    @just install-pre-commit-hook
+    @echo "✅ Pre-commit hooks installed!"
+
+# Install git pre-commit hook script
+install-pre-commit-hook:
+    @echo "#!/bin/bash" > .git/hooks/pre-commit
+    @echo "# Auto-generated pre-commit hook for datetime-mcp-server" >> .git/hooks/pre-commit
+    @echo "set -e" >> .git/hooks/pre-commit
+    @echo "echo '🚀 Running pre-commit validation...'" >> .git/hooks/pre-commit
+    @echo "just pre-commit-validate" >> .git/hooks/pre-commit
+    @echo "echo '✅ Pre-commit validation passed!'" >> .git/hooks/pre-commit
+    @chmod +x .git/hooks/pre-commit
 
 # Update all dependencies
 update-deps:
