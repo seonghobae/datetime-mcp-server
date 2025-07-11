@@ -373,7 +373,7 @@ async def root():
 
     return JSONResponse(
         {
-            "message": "Datetime MCP Server",
+            "name": "Datetime MCP Server",
             "version": "0.1.0",
             "transport": "http",
             "server": "hypercorn",
