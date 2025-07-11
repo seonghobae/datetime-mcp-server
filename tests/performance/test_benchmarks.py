@@ -41,7 +41,9 @@ class TestDatetimeMCPPerformance:
 
         result = benchmark(run_list_resources)
         assert len(result) > 0
-        assert len(result) >= 5  # At least 5 datetime resources (may include dynamic note resources)
+        assert (
+            len(result) >= 5
+        )  # At least 5 datetime resources (may include dynamic note resources)
 
     @pytest.mark.benchmark
     def test_benchmark_list_prompts(self, benchmark):
@@ -367,7 +369,7 @@ class TestScalabilityBenchmarks:
     """Scalability and load testing benchmarks."""
 
     @pytest.mark.benchmark
-    @pytest.mark.timeout(180)  # 3 minute timeout for concurrent tests  
+    @pytest.mark.timeout(180)  # 3 minute timeout for concurrent tests
     def test_concurrent_operations_simulation(self, benchmark):
         """Simulate concurrent operations to test scalability."""
 

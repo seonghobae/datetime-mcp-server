@@ -65,11 +65,11 @@ def main():
     """Main entry point with enhanced logging and error handling."""
     try:
         args = parse_args()
-        
+
         # Set up logging early for main.py
         setup_logging(level=args.log_level.upper())
         logger = get_logger("main")
-        
+
         logger.info(f"Starting Datetime MCP Server with transport: {args.transport}")
 
         if args.transport == "stdio":
@@ -93,7 +93,7 @@ def main():
             logger.error(f"Unknown transport mode: {args.transport}")
             print(f"Unknown transport mode: {args.transport}", file=sys.stderr)
             sys.exit(1)
-            
+
     except KeyboardInterrupt:
         print("\nServer interrupted by user", file=sys.stderr)
         sys.exit(0)

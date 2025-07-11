@@ -64,83 +64,95 @@ sse_connections_lock = threading.Lock()
 sse_connections: Set[weakref.ref] = set()
 max_sse_connections = 100
 
+
 class SSEConnectionManager:
     """Manages SSE connections to prevent resource leaks."""
-    
+
     def __init__(self, max_connections: int = 100):
         self.max_connections = max_connections
         self.connections: Set[str] = set()  # Use simple set instead of weak references
         self.lock = threading.Lock()
         self.connection_timestamps: Dict[str, float] = {}  # Track creation time
-        
+
     def add_connection(self, connection_id: str) -> bool:
         """Add a new SSE connection. Returns False if max connections reached."""
         with self.lock:
             # Clean up old connections first
             self._cleanup_old_connections()
-            
+
             if len(self.connections) >= self.max_connections:
-                logger.warning(f"Maximum SSE connections ({self.max_connections}) reached")
+                logger.warning(
+                    f"Maximum SSE connections ({self.max_connections}) reached"
+                )
                 return False
-                
+
             # Add connection to tracking
             self.connections.add(connection_id)
             self.connection_timestamps[connection_id] = time.time()
-            logger.debug(f"Added SSE connection {connection_id}. Total connections: {len(self.connections)}")
+            logger.debug(
+                f"Added SSE connection {connection_id}. Total connections: {len(self.connections)}"
+            )
             return True
-    
+
     def remove_connection(self, connection_id: str) -> None:
         """Remove an SSE connection."""
         with self.lock:
             if connection_id in self.connections:
                 self.connections.discard(connection_id)
                 self.connection_timestamps.pop(connection_id, None)
-                logger.debug(f"Removed SSE connection {connection_id}. Total connections: {len(self.connections)}")
-    
+                logger.debug(
+                    f"Removed SSE connection {connection_id}. Total connections: {len(self.connections)}"
+                )
+
     def _cleanup_old_connections(self) -> None:
         """Clean up connections older than 6 hours."""
         current_time = time.time()
         max_age = 6 * 3600  # 6 hours in seconds
-        
+
         old_connections = []
         for conn_id, timestamp in self.connection_timestamps.items():
             if current_time - timestamp > max_age:
                 old_connections.append(conn_id)
-        
+
         for conn_id in old_connections:
             self.connections.discard(conn_id)
             self.connection_timestamps.pop(conn_id, None)
-            
+
         if old_connections:
             logger.debug(f"Cleaned up {len(old_connections)} old SSE connections")
-    
+
     def get_connection_count(self) -> int:
         """Get current number of active connections."""
         with self.lock:
             self._cleanup_old_connections()
             return len(self.connections)
-    
+
     def is_connection_active(self, connection_id: str) -> bool:
         """Check if a connection is still active."""
         with self.lock:
             return connection_id in self.connections
 
+
 # Global SSE connection manager
 sse_manager = SSEConnectionManager(max_sse_connections)
+
 
 def update_metrics(endpoint: str, process_time: float, is_error: bool = False):
     """Thread-safe metrics update with memory management."""
     with metrics_lock:
         metrics["requests_total"] += 1
-        
+
         # Limit endpoint tracking to prevent memory bloat
         if len(metrics["requests_by_endpoint"]) >= MAX_ENDPOINT_TRACKING:
             # Remove least frequently used endpoint
-            min_endpoint = min(metrics["requests_by_endpoint"], 
-                             key=metrics["requests_by_endpoint"].get)
+            min_endpoint = min(
+                metrics["requests_by_endpoint"], key=metrics["requests_by_endpoint"].get
+            )
             del metrics["requests_by_endpoint"][min_endpoint]
-            logger.debug(f"Removed endpoint {min_endpoint} from tracking due to memory limits")
-        
+            logger.debug(
+                f"Removed endpoint {min_endpoint} from tracking due to memory limits"
+            )
+
         metrics["requests_by_endpoint"][endpoint] = (
             metrics["requests_by_endpoint"].get(endpoint, 0) + 1
         )
@@ -255,10 +267,10 @@ async def health_check():
             if metrics["response_times"]
             else 0
         )
-        
+
         # Get SSE connection info
         sse_count = sse_manager.get_connection_count()
-        
+
         health_data = {
             "status": "healthy",
             "version": "0.1.0",
@@ -279,15 +291,18 @@ async def health_check():
             "connections": {
                 "active_sse_connections": sse_count,
                 "max_sse_connections": max_sse_connections,
-                "sse_utilization_percent": round((sse_count / max_sse_connections) * 100, 1),
+                "sse_utilization_percent": round(
+                    (sse_count / max_sse_connections) * 100, 1
+                ),
             },
             "memory": {
                 "tracked_endpoints": len(metrics["requests_by_endpoint"]),
                 "max_endpoint_tracking": MAX_ENDPOINT_TRACKING,
-            }
+            },
         }
 
     return JSONResponse(health_data)
+
 
 @app.get("/metrics")
 async def get_metrics():
@@ -440,11 +455,12 @@ async def mcp_endpoint(request: Request):
 @app.get("/mcp/stream")
 async def mcp_stream_endpoint(request: Request):
     """Enhanced Server-Sent Events endpoint with connection management and resource cleanup."""
-    
+
     # Generate unique connection ID
     import uuid
+
     connection_id = str(uuid.uuid4())
-    
+
     # Check if we can add a new connection
     if not sse_manager.add_connection(connection_id):
         raise HTTPException(status_code=503, detail="Maximum SSE connections reached")
@@ -453,26 +469,28 @@ async def mcp_stream_endpoint(request: Request):
         try:
             # Send initial connection event
             initial_event = {
-                'type': 'connection', 
-                'status': 'connected', 
-                'timestamp': time.time(),
-                'connection_id': connection_id,
-                'active_connections': sse_manager.get_connection_count()
+                "type": "connection",
+                "status": "connected",
+                "timestamp": time.time(),
+                "connection_id": connection_id,
+                "active_connections": sse_manager.get_connection_count(),
             }
             yield f"data: {json.dumps(initial_event)}\n\n"
 
             # Send periodic heartbeat with connection management
             heartbeat_count = 0
             max_heartbeats = 720  # Maximum 6 hours (720 * 30 seconds)
-            
+
             while heartbeat_count < max_heartbeats:
                 await asyncio.sleep(30)  # Send heartbeat every 30 seconds
-                
+
                 # Check if connection is still valid
                 if not sse_manager.is_connection_active(connection_id):
-                    logger.info(f"SSE connection {connection_id} no longer tracked, terminating")
+                    logger.info(
+                        f"SSE connection {connection_id} no longer tracked, terminating"
+                    )
                     break
-                
+
                 heartbeat = {
                     "type": "heartbeat",
                     "timestamp": time.time(),
@@ -486,33 +504,33 @@ async def mcp_stream_endpoint(request: Request):
                 }
                 yield f"data: {json.dumps(heartbeat)}\n\n"
                 heartbeat_count += 1
-                
+
             # Send connection timeout event
             if heartbeat_count >= max_heartbeats:
                 timeout_event = {
-                    'type': 'timeout',
-                    'message': 'Connection timeout after maximum heartbeats',
-                    'timestamp': time.time(),
-                    'connection_id': connection_id
+                    "type": "timeout",
+                    "message": "Connection timeout after maximum heartbeats",
+                    "timestamp": time.time(),
+                    "connection_id": connection_id,
                 }
                 yield f"data: {json.dumps(timeout_event)}\n\n"
 
         except asyncio.CancelledError:
             logger.info(f"SSE connection {connection_id} cancelled")
             disconnect_event = {
-                'type': 'disconnection', 
-                'reason': 'cancelled',
-                'timestamp': time.time(),
-                'connection_id': connection_id
+                "type": "disconnection",
+                "reason": "cancelled",
+                "timestamp": time.time(),
+                "connection_id": connection_id,
             }
             yield f"data: {json.dumps(disconnect_event)}\n\n"
         except Exception as e:
             logger.error(f"Error in SSE stream {connection_id}: {e}")
             error_event = {
-                'type': 'error', 
-                'message': str(e), 
-                'timestamp': time.time(),
-                'connection_id': connection_id
+                "type": "error",
+                "message": str(e),
+                "timestamp": time.time(),
+                "connection_id": connection_id,
             }
             yield f"data: {json.dumps(error_event)}\n\n"
         finally:

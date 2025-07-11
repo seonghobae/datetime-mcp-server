@@ -46,8 +46,9 @@ health_metrics = {
     "note_storage_warnings": 0,
     "resource_cleanup_count": 0,
     "error_recovery_count": 0,
-    "last_health_check": 0
+    "last_health_check": 0,
 }
+
 
 def set_shutdown_requested(value: bool) -> None:
     """Thread-safe shutdown flag setter."""
@@ -55,10 +56,12 @@ def set_shutdown_requested(value: bool) -> None:
     with shutdown_lock:
         shutdown_requested = value
 
+
 def is_shutdown_requested() -> bool:
     """Thread-safe shutdown flag getter."""
     with shutdown_lock:
         return shutdown_requested
+
 
 def update_health_metrics(metric: str, increment: int = 1) -> None:
     """Thread-safe health metrics update."""
@@ -1103,7 +1106,7 @@ async def handle_call_tool(
     # Log the tool call
     start_time = asyncio.get_event_loop().time()
     logger.debug(f"Tool call: {name} with args: {arguments}")
-    
+
     if name == "add-note":
         try:
             if not arguments:
@@ -1118,20 +1121,22 @@ async def handle_call_tool(
             # Input validation
             if not isinstance(note_name, str) or not isinstance(content, str):
                 raise ValueError("Name and content must be strings")
-            
+
             # Sanitize and validate note name
             note_name = note_name.strip()
             if not note_name:
                 raise ValueError("Note name cannot be empty or only whitespace")
-            
+
             if len(note_name) > 255:
                 raise ValueError("Note name too long (maximum 255 characters)")
-            
+
             # Check content size
-            content_size = len(content.encode('utf-8'))
+            content_size = len(content.encode("utf-8"))
             if content_size > MAX_NOTE_SIZE:
-                raise ValueError(f"Note content too large ({content_size} bytes). Maximum size is {MAX_NOTE_SIZE} bytes ({MAX_NOTE_SIZE // 1024}KB)")
-            
+                raise ValueError(
+                    f"Note content too large ({content_size} bytes). Maximum size is {MAX_NOTE_SIZE} bytes ({MAX_NOTE_SIZE // 1024}KB)"
+                )
+
             # Thread-safe note operations
             with notes_lock:
                 # Check note count limit (thread-safe)
@@ -1139,27 +1144,31 @@ async def handle_call_tool(
                     # Remove oldest note if at limit (FIFO with OrderedDict)
                     if notes:
                         oldest_note, _ = notes.popitem(last=False)
-                        logger.warning(f"Note storage full, removed oldest note: '{oldest_note}'")
+                        logger.warning(
+                            f"Note storage full, removed oldest note: '{oldest_note}'"
+                        )
                         update_health_metrics("note_storage_warnings")
-                
+
                 # Update server state
                 is_update = note_name in notes
                 notes[note_name] = content
-                
+
                 # Move to end if updating (maintain access order)
                 if is_update:
                     notes.move_to_end(note_name)
-            
+
             # Log the operation
             action = "Updated" if is_update else "Added"
             logger.info(f"{action} note '{note_name}' (size: {content_size} bytes)")
-            
+
             # Notify clients that resources have changed - only if in a request context
             try:
                 await server.request_context.session.send_resource_list_changed()
             except LookupError:
                 # Running outside of a request context (e.g., in tests)
-                logger.debug("Resource list change notification skipped (no request context)")
+                logger.debug(
+                    "Resource list change notification skipped (no request context)"
+                )
             except Exception as e:
                 logger.warning(f"Failed to send resource list change notification: {e}")
 
@@ -1173,7 +1182,7 @@ async def handle_call_tool(
                     text=f"{action} note '{note_name}' with {len(content)} characters. Total notes: {note_count}/{MAX_NOTES}",
                 )
             ]
-            
+
         except ValueError as e:
             logger.warning(f"Invalid add-note request: {e}")
             return [
@@ -1230,7 +1239,7 @@ async def handle_call_tool(
             note_list = [
                 {"name": name, "content": content} for name, content in notes.items()
             ]
-        
+
         return [types.TextContent(type="text", text=json.dumps(note_list, indent=2))]
 
     elif name == "delete-note":
@@ -1359,50 +1368,46 @@ async def handle_call_tool(
                 try:
                     # Fallback to pytz if available
                     import pytz
+
                     tz = pytz.timezone(timezone_str)
                     now = datetime.datetime.now(tz)
                 except ImportError:
                     return [
                         types.TextContent(
                             type="text",
-                            text="The pytz library is not available. Using system timezone instead."
+                            text="The pytz library is not available. Using system timezone instead.",
                         ),
                         types.TextContent(
                             type="text",
-                            text=format_time(datetime.datetime.now(), time_format)
-                        )
+                            text=format_time(datetime.datetime.now(), time_format),
+                        ),
                     ]
                 except Exception as e:
                     return [
                         types.TextContent(
                             type="text",
-                            text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead."
+                            text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead.",
                         ),
                         types.TextContent(
                             type="text",
-                            text=format_time(datetime.datetime.now(), time_format)
-                        )
+                            text=format_time(datetime.datetime.now(), time_format),
+                        ),
                     ]
             except Exception as e:
                 return [
                     types.TextContent(
                         type="text",
-                        text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead."
+                        text=f"Error with timezone '{timezone_str}': {str(e)}. Using system timezone instead.",
                     ),
                     types.TextContent(
                         type="text",
-                        text=format_time(datetime.datetime.now(), time_format)
-                    )
+                        text=format_time(datetime.datetime.now(), time_format),
+                    ),
                 ]
         else:
             now = datetime.datetime.now()
 
-        return [
-            types.TextContent(
-                type="text",
-                text=format_time(now, time_format)
-            )
-        ]
+        return [types.TextContent(type="text", text=format_time(now, time_format))]
 
     elif name == "format-date":
         if not arguments:
@@ -1566,11 +1571,11 @@ async def handle_call_tool(
 
     # Log execution time for successful tools
     execution_time = (asyncio.get_event_loop().time() - start_time) * 1000
-    
+
     # Handle unknown tool
     logger.warning(f"Unknown tool requested: '{name}' with args: {arguments}")
     logger.debug(f"Tool call failed after {execution_time:.2f}ms")
-    
+
     return [
         types.TextContent(
             type="text",
@@ -1859,19 +1864,21 @@ def format_time(dt: datetime.datetime, format_type: str) -> str:
 
 def setup_signal_handlers():
     """Set up signal handlers for graceful shutdown with thread safety."""
-    
+
     def signal_handler(signum, frame):
         signal_name = signal.Signals(signum).name
-        logger.info(f"Received signal {signal_name} ({signum}), initiating graceful shutdown")
+        logger.info(
+            f"Received signal {signal_name} ({signum}), initiating graceful shutdown"
+        )
         health_logger.log_shutdown(f"signal_{signal_name.lower()}")
-        
+
         # Thread-safe shutdown flag setting
         set_shutdown_requested(True)
-    
+
     # Handle common termination signals
-    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
     signal.signal(signal.SIGTERM, signal_handler)  # Termination request
-    
+
     logger.debug("Signal handlers installed")
 
 
@@ -1882,56 +1889,64 @@ async def monitor_resources():
     max_consecutive_errors = 5
     base_sleep_interval = 30
     error_sleep_interval = 60
-    
+
     while not is_shutdown_requested():
         try:
             # Get memory usage
             memory_info = process.memory_info()
             memory_mb = memory_info.rss / 1024 / 1024
-            
+
             # Thread-safe note count access
             with notes_lock:
                 current_note_count = len(notes)
-            
+
             # Log memory usage every 5 minutes and if it's high
             if memory_mb > 100:  # Log if memory usage > 100MB
                 health_logger.log_memory_usage(memory_mb, current_note_count)
                 logger.warning(f"High memory usage detected: {memory_mb:.1f}MB")
                 update_health_metrics("memory_warnings")
-            
+
             # Check note storage limits
             if current_note_count >= MAX_NOTES:
-                logger.warning(f"Notes storage limit reached: {current_note_count}/{MAX_NOTES}")
+                logger.warning(
+                    f"Notes storage limit reached: {current_note_count}/{MAX_NOTES}"
+                )
                 update_health_metrics("note_storage_warnings")
-            
+
             # Check health metrics
             with health_metrics_lock:
                 if health_metrics["memory_warnings"] > 10:
-                    logger.critical(f"Excessive memory warnings: {health_metrics['memory_warnings']}")
-            
+                    logger.critical(
+                        f"Excessive memory warnings: {health_metrics['memory_warnings']}"
+                    )
+
             # Reset consecutive error count on success
             consecutive_errors = 0
-            
+
             # Sleep for normal interval
             await asyncio.sleep(base_sleep_interval)
-            
+
         except Exception as e:
             consecutive_errors += 1
             update_health_metrics("error_recovery_count")
-            
+
             if consecutive_errors >= max_consecutive_errors:
-                logger.critical(f"Resource monitoring failed {consecutive_errors} consecutive times, potential system instability")
+                logger.critical(
+                    f"Resource monitoring failed {consecutive_errors} consecutive times, potential system instability"
+                )
                 # Still continue monitoring but with longer intervals
                 await asyncio.sleep(error_sleep_interval * 2)
             else:
-                logger.error(f"Error in resource monitoring (attempt {consecutive_errors}/{max_consecutive_errors}): {e}")
+                logger.error(
+                    f"Error in resource monitoring (attempt {consecutive_errors}/{max_consecutive_errors}): {e}"
+                )
                 await asyncio.sleep(error_sleep_interval)
 
 
 async def cleanup_resources():
     """Enhanced clean up resources before shutdown with error handling."""
     logger.info("Starting resource cleanup")
-    
+
     try:
         # Thread-safe notes cleanup
         with notes_lock:
@@ -1940,13 +1955,13 @@ async def cleanup_resources():
                 logger.info(f"Clearing {notes_count} notes from memory")
                 notes.clear()
                 update_health_metrics("resource_cleanup_count")
-        
+
         # Log final health metrics
         with health_metrics_lock:
             logger.info(f"Final health metrics: {health_metrics}")
-        
+
         logger.info("Resource cleanup completed")
-        
+
     except Exception as e:
         logger.error(f"Error during resource cleanup: {e}")
         # Continue cleanup despite errors
@@ -1958,42 +1973,41 @@ async def main():
     logging, monitoring, and graceful shutdown capabilities.
     """
     global shutdown_requested
-    
+
     # Initialize logging with environment variables or defaults
     log_level = os.getenv("LOG_LEVEL", "INFO")
     log_file = os.getenv("LOG_FILE")  # Optional log file
     structured_logging = os.getenv("STRUCTURED_LOGGING", "false").lower() == "true"
-    
+
     try:
         # Set up logging
-        setup_logging(
-            level=log_level,
-            log_file=log_file,
-            structured=structured_logging
-        )
-        
+        setup_logging(level=log_level, log_file=log_file, structured=structured_logging)
+
         # Log startup
         logger.info("Starting Datetime MCP Server")
-        health_logger.log_startup("stdio", {
-            "log_level": log_level,
-            "log_file": log_file,
-            "structured_logging": structured_logging,
-            "max_notes": MAX_NOTES,
-            "max_note_size_kb": MAX_NOTE_SIZE // 1024
-        })
-        
+        health_logger.log_startup(
+            "stdio",
+            {
+                "log_level": log_level,
+                "log_file": log_file,
+                "structured_logging": structured_logging,
+                "max_notes": MAX_NOTES,
+                "max_note_size_kb": MAX_NOTE_SIZE // 1024,
+            },
+        )
+
         # Set up signal handlers for graceful shutdown
         setup_signal_handlers()
-        
+
         # Start resource monitoring task
         monitor_task = asyncio.create_task(monitor_resources())
-        
+
         logger.info("Initializing MCP server with stdio transport")
-        
+
         # Run the server with comprehensive error handling
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
             logger.info("STDIO streams established, starting server")
-            
+
             # Configure server initialization options
             init_options = InitializationOptions(
                 server_name="datetime-mcp-server",
@@ -2003,14 +2017,14 @@ async def main():
                     experimental_capabilities={},
                 ),
             )
-            
+
             logger.debug(f"Server capabilities: {init_options.capabilities}")
-            
+
             try:
                 # Start the main server
                 logger.info("MCP server started successfully")
                 await server.run(read_stream, write_stream, init_options)
-                
+
             except asyncio.CancelledError:
                 logger.info("Server run cancelled")
                 raise
@@ -2028,7 +2042,7 @@ async def main():
                 logger.error(f"Unexpected error in server run: {e}")
                 health_logger.log_error(e, "server_run")
                 raise
-        
+
     except KeyboardInterrupt:
         logger.info("Server interrupted by user (Ctrl+C)")
         health_logger.log_shutdown("keyboard_interrupt")
@@ -2039,19 +2053,19 @@ async def main():
     finally:
         # Ensure cleanup happens
         set_shutdown_requested(True)
-        
+
         # Cancel monitoring task
-        if 'monitor_task' in locals() and not monitor_task.done():
+        if "monitor_task" in locals() and not monitor_task.done():
             logger.debug("Cancelling resource monitoring task")
             monitor_task.cancel()
             try:
                 await monitor_task
             except asyncio.CancelledError:
                 pass
-        
+
         # Clean up resources
         await cleanup_resources()
-        
+
         logger.info("Datetime MCP Server shutdown completed")
         health_logger.log_shutdown("normal", 0)
 
