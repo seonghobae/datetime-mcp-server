@@ -146,6 +146,7 @@ jobs:
     name: Lint and Type Check
     runs-on: ubuntu-latest
     needs: detect-config
+    timeout-minutes: 10  # Maximum 10 minutes for linting and type checking
     steps:
       - uses: actions/checkout@v4
 
@@ -174,6 +175,7 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-latest
     needs: detect-config
+    timeout-minutes: 15  # Maximum 15 minutes for test job
     strategy:
       matrix:
         python-version: ${{ fromJson(needs.detect-config.outputs.python_matrix) }}

@@ -45,6 +45,7 @@ dev = [
     "pytest-skip-slow>=0.0.5",
     "pytest-skipuntil>=0.2.0",
     "pytest-sugar>=1.0.0",
+    "pytest-timeout>=2.4.0",
     "pyupgrade>=3.19.1",
     "requests-mock>=1.12.1",
     "respx>=0.22.0",
@@ -75,5 +76,11 @@ addopts = [
     "--benchmark-min-time=0.000005",
     "--benchmark-max-time=0.050",
     "--benchmark-min-rounds=5",
-    "--benchmark-json=benchmark_results.json"
+    "--benchmark-json=benchmark_results.json",
+    # Timeout settings to prevent infinite waiting
+    "--timeout=300",  # 5 minutes for individual tests
+    "--timeout-method=thread"  # Use thread-based timeout for better compatibility
 ]
+# Global timeout settings
+timeout = 300  # 5 minutes per test
+timeout_method = "thread"  # Use thread timeout method

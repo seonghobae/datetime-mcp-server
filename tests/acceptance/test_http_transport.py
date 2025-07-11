@@ -4,10 +4,6 @@ Test cases for HTTP transport functionality.
 Tests the FastAPI-based HTTP server implementation of the MCP protocol.
 """
 
-import asyncio
-import json
-import pytest
-import httpx
 from fastapi.testclient import TestClient
 
 from datetime_mcp_server.http_server import app
@@ -53,26 +49,28 @@ class TestHTTPTransport:
 
     def test_mcp_tools_list(self):
         """Test MCP tools/list endpoint."""
-        request_data = {
-            "jsonrpc": "2.0",
-            "method": "tools/list",
-            "id": 1
-        }
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
         response = self.client.post("/mcp", json=request_data)
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["jsonrpc"] == "2.0"
         assert data["id"] == 1
         assert "result" in data
         assert "tools" in data["result"]
-        
+
         tools = data["result"]["tools"]
         tool_names = [tool["name"] for tool in tools]
         expected_tools = [
-            "add-note", "get-note", "list-notes", "delete-note",
-            "get-current-datetime", "format-date", "calculate-date",
-            "calculate-date-range", "calculate-business-days"
+            "add-note",
+            "get-note",
+            "list-notes",
+            "delete-note",
+            "get-current-datetime",
+            "format-date",
+            "calculate-date",
+            "calculate-date-range",
+            "calculate-business-days",
         ]
         for expected_tool in expected_tools:
             assert expected_tool in tool_names
@@ -82,16 +80,13 @@ class TestHTTPTransport:
         request_data = {
             "jsonrpc": "2.0",
             "method": "tools/call",
-            "params": {
-                "name": "get-current-datetime",
-                "arguments": {"format": "iso"}
-            },
-            "id": 2
+            "params": {"name": "get-current-datetime", "arguments": {"format": "iso"}},
+            "id": 2,
         }
         response = self.client.post("/mcp", json=request_data)
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["jsonrpc"] == "2.0"
         assert data["id"] == 2
         assert "result" in data
@@ -102,25 +97,24 @@ class TestHTTPTransport:
 
     def test_mcp_resources_list(self):
         """Test MCP resources/list endpoint."""
-        request_data = {
-            "jsonrpc": "2.0",
-            "method": "resources/list",
-            "id": 3
-        }
+        request_data = {"jsonrpc": "2.0", "method": "resources/list", "id": 3}
         response = self.client.post("/mcp", json=request_data)
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["jsonrpc"] == "2.0"
         assert data["id"] == 3
         assert "result" in data
         assert "resources" in data["result"]
-        
+
         resources = data["result"]["resources"]
         resource_uris = [resource["uri"] for resource in resources]
         expected_resources = [
-            "datetime://current", "datetime://today", "datetime://time",
-            "datetime://timezone-info", "datetime://supported-timezones"
+            "datetime://current",
+            "datetime://today",
+            "datetime://time",
+            "datetime://timezone-info",
+            "datetime://supported-timezones",
         ]
         for expected_resource in expected_resources:
             assert expected_resource in resource_uris
@@ -130,15 +124,13 @@ class TestHTTPTransport:
         request_data = {
             "jsonrpc": "2.0",
             "method": "resources/read",
-            "params": {
-                "uri": "datetime://current"
-            },
-            "id": 4
+            "params": {"uri": "datetime://current"},
+            "id": 4,
         }
         response = self.client.post("/mcp", json=request_data)
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["jsonrpc"] == "2.0"
         assert data["id"] == 4
         assert "result" in data
@@ -149,25 +141,24 @@ class TestHTTPTransport:
 
     def test_mcp_prompts_list(self):
         """Test MCP prompts/list endpoint."""
-        request_data = {
-            "jsonrpc": "2.0",
-            "method": "prompts/list",
-            "id": 5
-        }
+        request_data = {"jsonrpc": "2.0", "method": "prompts/list", "id": 5}
         response = self.client.post("/mcp", json=request_data)
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["jsonrpc"] == "2.0"
         assert data["id"] == 5
         assert "result" in data
         assert "prompts" in data["result"]
-        
+
         prompts = data["result"]["prompts"]
         prompt_names = [prompt["name"] for prompt in prompts]
         expected_prompts = [
-            "summarize-notes", "schedule-event", "datetime-calculation-guide",
-            "business-day-rules", "timezone-best-practices"
+            "summarize-notes",
+            "schedule-event",
+            "datetime-calculation-guide",
+            "business-day-rules",
+            "timezone-best-practices",
         ]
         for expected_prompt in expected_prompts:
             assert expected_prompt in prompt_names
@@ -175,35 +166,37 @@ class TestHTTPTransport:
     def test_mcp_error_handling(self):
         """Test MCP error handling for invalid requests."""
         # Test missing method
-        request_data = {
-            "jsonrpc": "2.0",
-            "id": 6
-        }
+        request_data = {"jsonrpc": "2.0", "id": 6}
         response = self.client.post("/mcp", json=request_data)
         assert response.status_code == 400
-        
+
         # Test unknown method
-        request_data = {
-            "jsonrpc": "2.0",
-            "method": "unknown/method",
-            "id": 7
-        }
+        request_data = {"jsonrpc": "2.0", "method": "unknown/method", "id": 7}
         response = self.client.post("/mcp", json=request_data)
         assert response.status_code == 404
-        
+
         # Test invalid JSON
-        response = self.client.post("/mcp", content="invalid json", headers={"content-type": "application/json"})
+        response = self.client.post(
+            "/mcp", content="invalid json", headers={"content-type": "application/json"}
+        )
         assert response.status_code == 400
 
     def test_sse_stream_endpoint(self):
         """Test Server-Sent Events streaming endpoint."""
         # Note: This is a basic test for SSE endpoint existence
         # Full streaming tests would require more complex async testing
+        import pytest
+        
+        # This test has a timeout applied globally through pytest settings
         with self.client.stream("GET", "/mcp/stream") as response:
             assert response.status_code == 200
-            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+            assert (
+                response.headers["content-type"] == "text/event-stream; charset=utf-8"
+            )
             assert "cache-control" in response.headers
             assert response.headers["cache-control"] == "no-cache"
+            # Only verify headers, don't try to read the stream content
+            # to avoid infinite waiting
 
     def test_cors_headers(self):
         """Test CORS headers are present."""
@@ -217,12 +210,12 @@ class TestHTTPTransport:
         """Test that metrics middleware is working."""
         # Make a request to generate metrics
         self.client.get("/health")
-        
+
         # Check metrics are updated
         response = self.client.get("/metrics")
         content = response.text
-        
+
         # Should have at least 1 request recorded
         assert "datetime_mcp_requests_total" in content
         # Response time should be recorded
-        assert "datetime_mcp_response_time_seconds" in content 
+        assert "datetime_mcp_response_time_seconds" in content
