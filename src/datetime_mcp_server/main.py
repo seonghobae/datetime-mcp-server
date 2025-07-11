@@ -7,6 +7,7 @@ import sys
 
 from .server import main as stdio_main
 from .http_server import run_http_server
+from .logging_config import setup_logging, get_logger
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,26 +62,48 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
-    """Main entry point."""
-    args = parse_args()
+    """Main entry point with enhanced logging and error handling."""
+    try:
+        args = parse_args()
+        
+        # Set up logging early for main.py
+        setup_logging(level=args.log_level.upper())
+        logger = get_logger("main")
+        
+        logger.info(f"Starting Datetime MCP Server with transport: {args.transport}")
 
-    if args.transport == "stdio":
-        print("Starting Datetime MCP Server in STDIO mode...", file=sys.stderr)
-        asyncio.run(stdio_main())
-    elif args.transport == "http":
-        print(
-            f"Starting Datetime MCP Server in HTTP mode on {args.host}:{args.port}...",
-            file=sys.stderr,
-        )
-        run_http_server(
-            host=args.host,
-            port=args.port,
-            workers=args.workers,
-            reload=args.reload,
-            log_level=args.log_level,
-        )
-    else:
-        print(f"Unknown transport mode: {args.transport}", file=sys.stderr)
+        if args.transport == "stdio":
+            logger.info("Initializing STDIO transport mode")
+            print("Starting Datetime MCP Server in STDIO mode...", file=sys.stderr)
+            asyncio.run(stdio_main())
+        elif args.transport == "http":
+            logger.info(f"Initializing HTTP transport mode on {args.host}:{args.port}")
+            print(
+                f"Starting Datetime MCP Server in HTTP mode on {args.host}:{args.port}...",
+                file=sys.stderr,
+            )
+            run_http_server(
+                host=args.host,
+                port=args.port,
+                workers=args.workers,
+                reload=args.reload,
+                log_level=args.log_level,
+            )
+        else:
+            logger.error(f"Unknown transport mode: {args.transport}")
+            print(f"Unknown transport mode: {args.transport}", file=sys.stderr)
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        print("\nServer interrupted by user", file=sys.stderr)
+        sys.exit(0)
+    except Exception as e:
+        print(f"Failed to start server: {e}", file=sys.stderr)
+        try:
+            logger = get_logger("main")
+            logger.error(f"Fatal error in main: {e}", exc_info=True)
+        except:
+            pass  # Logging may not be set up yet
         sys.exit(1)
 
 
