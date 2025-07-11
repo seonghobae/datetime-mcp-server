@@ -7,7 +7,10 @@ import signal
 import sys
 import psutil
 import os
+import threading
 from typing import Dict, List, Optional
+from collections import OrderedDict
+import time
 
 from mcp.server.models import InitializationOptions
 import mcp.types as types
@@ -26,12 +29,44 @@ health_logger = ServerHealthLogger()
 MAX_NOTES = 1000
 MAX_NOTE_SIZE = 10 * 1024  # 10KB per note
 
-notes: dict[str, str] = {}
+# Thread-safe notes storage with proper synchronization
+notes_lock = threading.RLock()  # Reentrant lock for nested operations
+notes: OrderedDict[str, str] = OrderedDict()  # OrderedDict for proper FIFO behavior
 
 server = Server("datetime-mcp-server")
 
-# Global shutdown flag
+# Thread-safe shutdown management
+shutdown_lock = threading.Lock()
 shutdown_requested = False
+
+# Server health metrics with thread safety
+health_metrics_lock = threading.Lock()
+health_metrics = {
+    "memory_warnings": 0,
+    "note_storage_warnings": 0,
+    "resource_cleanup_count": 0,
+    "error_recovery_count": 0,
+    "last_health_check": 0
+}
+
+def set_shutdown_requested(value: bool) -> None:
+    """Thread-safe shutdown flag setter."""
+    global shutdown_requested
+    with shutdown_lock:
+        shutdown_requested = value
+
+def is_shutdown_requested() -> bool:
+    """Thread-safe shutdown flag getter."""
+    with shutdown_lock:
+        return shutdown_requested
+
+def update_health_metrics(metric: str, increment: int = 1) -> None:
+    """Thread-safe health metrics update."""
+    with health_metrics_lock:
+        if metric in health_metrics:
+            health_metrics[metric] += increment
+        # Use time.time() instead of asyncio.get_event_loop().time() for thread safety
+        health_metrics["last_health_check"] = time.time()
 
 
 @server.list_resources()
@@ -1097,17 +1132,23 @@ async def handle_call_tool(
             if content_size > MAX_NOTE_SIZE:
                 raise ValueError(f"Note content too large ({content_size} bytes). Maximum size is {MAX_NOTE_SIZE} bytes ({MAX_NOTE_SIZE // 1024}KB)")
             
-            # Check note count limit
-            if note_name not in notes and len(notes) >= MAX_NOTES:
-                # Remove oldest note if at limit (FIFO)
-                if notes:
-                    oldest_note = next(iter(notes))
-                    del notes[oldest_note]
-                    logger.warning(f"Note storage full, removed oldest note: '{oldest_note}'")
-            
-            # Update server state
-            is_update = note_name in notes
-            notes[note_name] = content
+            # Thread-safe note operations
+            with notes_lock:
+                # Check note count limit (thread-safe)
+                if note_name not in notes and len(notes) >= MAX_NOTES:
+                    # Remove oldest note if at limit (FIFO with OrderedDict)
+                    if notes:
+                        oldest_note, _ = notes.popitem(last=False)
+                        logger.warning(f"Note storage full, removed oldest note: '{oldest_note}'")
+                        update_health_metrics("note_storage_warnings")
+                
+                # Update server state
+                is_update = note_name in notes
+                notes[note_name] = content
+                
+                # Move to end if updating (maintain access order)
+                if is_update:
+                    notes.move_to_end(note_name)
             
             # Log the operation
             action = "Updated" if is_update else "Added"
@@ -1122,10 +1163,14 @@ async def handle_call_tool(
             except Exception as e:
                 logger.warning(f"Failed to send resource list change notification: {e}")
 
+            # Thread-safe note count access
+            with notes_lock:
+                note_count = len(notes)
+
             return [
                 types.TextContent(
                     type="text",
-                    text=f"{action} note '{note_name}' with {len(content)} characters. Total notes: {len(notes)}/{MAX_NOTES}",
+                    text=f"{action} note '{note_name}' with {len(content)} characters. Total notes: {note_count}/{MAX_NOTES}",
                 )
             ]
             
@@ -1139,6 +1184,7 @@ async def handle_call_tool(
             ]
         except Exception as e:
             logger.error(f"Unexpected error in add-note: {e}", exc_info=True)
+            update_health_metrics("error_recovery_count")
             return [
                 types.TextContent(
                     type="text",
@@ -1155,28 +1201,36 @@ async def handle_call_tool(
         if not note_name:
             raise ValueError("Missing name argument")
 
-        if note_name in notes:
-            return [
-                types.TextContent(
-                    type="text",
-                    text=notes[note_name],
-                )
-            ]
-        else:
-            return [
-                types.TextContent(
-                    type="text",
-                    text=f"Note '{note_name}' not found",
-                )
-            ]
+        # Thread-safe note access
+        with notes_lock:
+            if note_name in notes:
+                note_content = notes[note_name]
+                # Update access order
+                notes.move_to_end(note_name)
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=note_content,
+                    )
+                ]
+            else:
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"Note '{note_name}' not found",
+                    )
+                ]
 
     elif name == "list-notes":
-        if not notes:
-            return [types.TextContent(type="text", text=json.dumps([], indent=2))]
+        # Thread-safe note listing
+        with notes_lock:
+            if not notes:
+                return [types.TextContent(type="text", text=json.dumps([], indent=2))]
 
-        note_list = [
-            {"name": name, "content": content} for name, content in notes.items()
-        ]
+            note_list = [
+                {"name": name, "content": content} for name, content in notes.items()
+            ]
+        
         return [types.TextContent(type="text", text=json.dumps(note_list, indent=2))]
 
     elif name == "delete-note":
@@ -1188,9 +1242,15 @@ async def handle_call_tool(
         if not note_name:
             raise ValueError("Missing name argument")
 
-        if note_name in notes:
-            del notes[note_name]
+        # Thread-safe note deletion
+        with notes_lock:
+            if note_name in notes:
+                del notes[note_name]
+                note_found = True
+            else:
+                note_found = False
 
+        if note_found:
             # Notify clients that resources have changed - only if in a request context
             try:
                 await server.request_context.session.send_resource_list_changed()
@@ -1798,16 +1858,15 @@ def format_time(dt: datetime.datetime, format_type: str) -> str:
 
 
 def setup_signal_handlers():
-    """Set up signal handlers for graceful shutdown."""
-    global shutdown_requested
+    """Set up signal handlers for graceful shutdown with thread safety."""
     
     def signal_handler(signum, frame):
         signal_name = signal.Signals(signum).name
         logger.info(f"Received signal {signal_name} ({signum}), initiating graceful shutdown")
         health_logger.log_shutdown(f"signal_{signal_name.lower()}")
         
-        global shutdown_requested
-        shutdown_requested = True
+        # Thread-safe shutdown flag setting
+        set_shutdown_requested(True)
     
     # Handle common termination signals
     signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
@@ -1817,48 +1876,80 @@ def setup_signal_handlers():
 
 
 async def monitor_resources():
-    """Background task to monitor server resource usage."""
+    """Enhanced background task to monitor server resource usage with better error recovery."""
     process = psutil.Process(os.getpid())
+    consecutive_errors = 0
+    max_consecutive_errors = 5
+    base_sleep_interval = 30
+    error_sleep_interval = 60
     
-    while not shutdown_requested:
+    while not is_shutdown_requested():
         try:
             # Get memory usage
             memory_info = process.memory_info()
             memory_mb = memory_info.rss / 1024 / 1024
             
+            # Thread-safe note count access
+            with notes_lock:
+                current_note_count = len(notes)
+            
             # Log memory usage every 5 minutes and if it's high
             if memory_mb > 100:  # Log if memory usage > 100MB
-                health_logger.log_memory_usage(memory_mb, len(notes))
+                health_logger.log_memory_usage(memory_mb, current_note_count)
                 logger.warning(f"High memory usage detected: {memory_mb:.1f}MB")
+                update_health_metrics("memory_warnings")
             
             # Check note storage limits
-            if len(notes) >= MAX_NOTES:
-                logger.warning(f"Notes storage limit reached: {len(notes)}/{MAX_NOTES}")
+            if current_note_count >= MAX_NOTES:
+                logger.warning(f"Notes storage limit reached: {current_note_count}/{MAX_NOTES}")
+                update_health_metrics("note_storage_warnings")
             
-            # Sleep for 30 seconds before next check
-            await asyncio.sleep(30)
+            # Check health metrics
+            with health_metrics_lock:
+                if health_metrics["memory_warnings"] > 10:
+                    logger.critical(f"Excessive memory warnings: {health_metrics['memory_warnings']}")
+            
+            # Reset consecutive error count on success
+            consecutive_errors = 0
+            
+            # Sleep for normal interval
+            await asyncio.sleep(base_sleep_interval)
             
         except Exception as e:
-            logger.error(f"Error in resource monitoring: {e}")
-            await asyncio.sleep(60)  # Wait longer on error
+            consecutive_errors += 1
+            update_health_metrics("error_recovery_count")
+            
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(f"Resource monitoring failed {consecutive_errors} consecutive times, potential system instability")
+                # Still continue monitoring but with longer intervals
+                await asyncio.sleep(error_sleep_interval * 2)
+            else:
+                logger.error(f"Error in resource monitoring (attempt {consecutive_errors}/{max_consecutive_errors}): {e}")
+                await asyncio.sleep(error_sleep_interval)
 
 
 async def cleanup_resources():
-    """Clean up resources before shutdown."""
+    """Enhanced clean up resources before shutdown with error handling."""
     logger.info("Starting resource cleanup")
     
     try:
-        # Clear notes if they're taking too much memory
-        if len(notes) > 0:
-            notes_count = len(notes)
-            logger.info(f"Clearing {notes_count} notes from memory")
-            notes.clear()
+        # Thread-safe notes cleanup
+        with notes_lock:
+            if len(notes) > 0:
+                notes_count = len(notes)
+                logger.info(f"Clearing {notes_count} notes from memory")
+                notes.clear()
+                update_health_metrics("resource_cleanup_count")
         
-        # Add any other cleanup tasks here
+        # Log final health metrics
+        with health_metrics_lock:
+            logger.info(f"Final health metrics: {health_metrics}")
+        
         logger.info("Resource cleanup completed")
         
     except Exception as e:
         logger.error(f"Error during resource cleanup: {e}")
+        # Continue cleanup despite errors
 
 
 async def main():
@@ -1947,7 +2038,7 @@ async def main():
         sys.exit(1)
     finally:
         # Ensure cleanup happens
-        shutdown_requested = True
+        set_shutdown_requested(True)
         
         # Cancel monitoring task
         if 'monitor_task' in locals() and not monitor_task.done():
