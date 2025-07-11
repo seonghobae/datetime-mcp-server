@@ -326,6 +326,7 @@ class TestPerformanceRegression:
         # configuration which will fail if performance degrades
 
     @pytest.mark.benchmark
+    @pytest.mark.timeout(120)  # 2 minute timeout for memory intensive tests
     def test_memory_usage_benchmark(self, benchmark):
         """Benchmark memory usage of datetime operations."""
         import psutil
@@ -366,6 +367,7 @@ class TestScalabilityBenchmarks:
     """Scalability and load testing benchmarks."""
 
     @pytest.mark.benchmark
+    @pytest.mark.timeout(180)  # 3 minute timeout for concurrent tests  
     def test_concurrent_operations_simulation(self, benchmark):
         """Simulate concurrent operations to test scalability."""
 
