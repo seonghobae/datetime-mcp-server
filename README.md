@@ -1,6 +1,6 @@
 # DateTime MCP Server for RAG Temporal Context
 
-A specialized MCP (Model Context Protocol) server that provides **temporal context awareness** for LLMs, enabling them to understand relative time expressions like "yesterday", "today", and "tomorrow" in RAG (Retrieval-Augmented Generation) applications.
+A comprehensive MCP (Model Context Protocol) server that specializes in **temporal context awareness for RAG applications**, while providing precise datetime calculation tools, timezone support, and note management functionality for LLMs.
 
 ## Overview
 
@@ -10,17 +10,30 @@ A specialized MCP (Model Context Protocol) server that provides **temporal conte
 
 ### Core Value Proposition
 
-🎯 **For RAG Applications**: Transform user queries with relative time expressions into precise date-filtered searches  
-🕒 **Temporal Context**: Give LLMs a reliable "today" reference point and calculation tools  
+🎯 **Primary: RAG Temporal Context**: Transform user queries with relative time expressions into precise date-filtered searches  
+🕒 **Temporal Awareness**: Give LLMs a reliable "today" reference point and calculation tools  
 🔧 **Mathematical Precision**: No natural language parsing - only exact date arithmetic  
-⚡ **Performance Optimized**: <50ms response time for real-time chat applications  
+⚡ **Performance Optimized**: <50ms response time for real-time applications  
+🌍 **Comprehensive Features**: Full timezone support, business day calculations, and note management
 
 ### Key Use Cases
 
+#### **RAG Applications** 
 - **Chat Applications**: *"What did we discuss yesterday?"* → Filter documents by exact date  
 - **Document Search**: *"Reports from last quarter"* → Calculate precise date ranges  
 - **Time-based Analytics**: *"Compare this month vs last month"* → Generate exact comparison periods  
+
+#### **Business & Project Management**
 - **Scheduling & Planning**: *"Deadline in 2 weeks"* → Calculate specific target dates  
+- **Project Timelines**: Calculate business days, account for holidays and weekends
+- **Reporting Periods**: Generate accurate date ranges for financial/operational reports
+- **SLA Tracking**: Calculate business day response times, exclude non-working days
+
+#### **General Temporal Operations**
+- **Multi-timezone Coordination**: Handle global team scheduling and coordination
+- **Date Format Conversion**: Transform dates between ISO, RFC3339, Unix timestamps
+- **Leap Year & Edge Cases**: Reliable handling of month-end dates, timezone transitions
+- **Note Management**: Store and retrieve temporal context and calculation metadata
 
 Key features include:
 - **Precise Date Calculations**: Add/subtract days, weeks, months, years with proper edge case handling
