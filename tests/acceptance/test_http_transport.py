@@ -233,7 +233,10 @@ class TestHTTPTransport:
                 generator = response.body_iterator
 
                 # Get the first event (initial connection event)
-                first_event = await generator.__anext__()
+                first_event = None
+                async for event in generator:
+                    first_event = event
+                    break
 
                 # Verify SSE event format and content
                 assert isinstance(first_event, str)

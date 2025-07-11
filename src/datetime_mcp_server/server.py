@@ -69,7 +69,7 @@ def update_health_metrics(metric: str, increment: int = 1) -> None:
         if metric in health_metrics:
             health_metrics[metric] += increment
         # Use time.time() instead of asyncio.get_event_loop().time() for thread safety
-        health_metrics["last_health_check"] = time.time()
+        health_metrics["last_health_check"] = int(time.time())
 
 
 @server.list_resources()
@@ -1321,7 +1321,10 @@ async def handle_call_tool(
         # Format the datetime
         try:
             if time_format == "custom":
-                formatted_time = now.strftime(custom_format)
+                if custom_format:
+                    formatted_time = now.strftime(custom_format)
+                else:
+                    raise ValueError("custom_format is required when format='custom'")
             elif time_format == "json":
                 # Return JSON format with multiple representations
                 json_output = {
@@ -1367,7 +1370,7 @@ async def handle_call_tool(
             except zoneinfo.ZoneInfoNotFoundError:
                 try:
                     # Fallback to pytz if available
-                    import pytz
+                    import pytz  # type: ignore
 
                     tz = pytz.timezone(timezone_str)
                     now = datetime.datetime.now(tz)
@@ -1814,6 +1817,7 @@ def calculate_date_operation(
     delta_amount = amount if operation == "add" else -amount
 
     # Perform the calculation based on unit
+    result_dt = dt
     if unit == "days":
         result_dt = dt + datetime.timedelta(days=delta_amount)
     elif unit == "weeks":
@@ -1973,6 +1977,7 @@ async def main():
     logging, monitoring, and graceful shutdown capabilities.
     """
     global shutdown_requested
+    monitor_task = None
 
     # Initialize logging with environment variables or defaults
     log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -2032,9 +2037,6 @@ async def main():
                 logger.error(f"Connection error in server: {e}")
                 health_logger.log_error(e, "server_connection")
                 raise
-            except BrokenPipeError as e:
-                logger.warning(f"Client disconnected (broken pipe): {e}")
-                # This is often normal when client disconnects
             except EOFError as e:
                 logger.info(f"Client closed connection (EOF): {e}")
                 # This is normal when client closes cleanly
@@ -2055,7 +2057,7 @@ async def main():
         set_shutdown_requested(True)
 
         # Cancel monitoring task
-        if "monitor_task" in locals() and not monitor_task.done():
+        if monitor_task and not monitor_task.done():
             logger.debug("Cancelling resource monitoring task")
             monitor_task.cancel()
             try:

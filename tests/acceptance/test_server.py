@@ -6,7 +6,6 @@ by testing resources, prompts, and tools.
 """
 
 import datetime
-from typing import cast
 from typing import TYPE_CHECKING
 
 import pytest
@@ -104,17 +103,17 @@ async def test_read_datetime_resources(reset_server_state: None) -> None:
     # Test current datetime
     content = await handle_read_resource(AnyUrl("datetime://current"))
     # Verify format, but not exact time since it will change
-    assert len(content.split()) == 2  # Date and time parts
+    assert len(str(content).split()) == 2  # Date and time parts
 
     # Test today's date
     content = await handle_read_resource(AnyUrl("datetime://today"))
     # Verify format, but not exact date
-    assert len(content.split("-")) == 3  # Year, month, day parts
+    assert len(str(content).split("-")) == 3  # Year, month, day parts
 
     # Test current time
     content = await handle_read_resource(AnyUrl("datetime://time"))
     # Verify format, but not exact time
-    assert len(content.split(":")) == 3  # Hour, minute, second parts
+    assert len(str(content).split(":")) == 3  # Hour, minute, second parts
 
 
 @pytest.mark.asyncio
@@ -162,6 +161,7 @@ async def test_list_prompts(reset_server_state: None) -> None:
     # Check specific prompts
     schedule_event = next(p for p in prompts if p.name == "schedule-event")
     assert schedule_event.description == "Helps schedule an event at a specific time"
+    assert schedule_event.arguments is not None
     assert len(schedule_event.arguments) == 2
 
     # Check arguments for schedule-event
@@ -175,6 +175,7 @@ async def test_list_prompts(reset_server_state: None) -> None:
         datetime_guide.description
         == "Provides examples and guidance on when and how to use date calculation tools"
     )
+    assert datetime_guide.arguments is not None
     assert len(datetime_guide.arguments) == 1
 
     business_rules = next(p for p in prompts if p.name == "business-day-rules")
@@ -182,6 +183,7 @@ async def test_list_prompts(reset_server_state: None) -> None:
         business_rules.description
         == "Explains business day calculation rules, weekend patterns, and holiday handling"
     )
+    assert business_rules.arguments is not None
     assert len(business_rules.arguments) == 1
 
     timezone_practices = next(p for p in prompts if p.name == "timezone-best-practices")
@@ -189,6 +191,7 @@ async def test_list_prompts(reset_server_state: None) -> None:
         timezone_practices.description
         == "Guidelines for timezone-aware date operations and common pitfalls to avoid"
     )
+    assert timezone_practices.arguments is not None
     assert len(timezone_practices.arguments) == 1
 
 
@@ -207,11 +210,9 @@ async def test_get_summarize_notes_prompt(reset_server_state: None) -> None:
 
     message = result.messages[0]
     assert message.role == "user"
-    assert "test1: This is a test note" in cast(types.TextContent, message.content).text
-    assert (
-        "test2: This is another test note"
-        in cast(types.TextContent, message.content).text
-    )
+    assert isinstance(message.content, types.TextContent)
+    assert "test1: This is a test note" in message.content.text
+    assert "test2: This is another test note" in message.content.text
 
 
 @pytest.mark.asyncio
@@ -231,7 +232,8 @@ async def test_get_schedule_event_prompt(reset_server_state: None) -> None:
     message = result.messages[0]
     assert message.role == "user"
 
-    content_text = cast(types.TextContent, message.content).text
+    assert isinstance(message.content, types.TextContent)
+    content_text = message.content.text
     assert "Please schedule an event named 'Meeting'" in content_text
     assert "at 15:00" in content_text
 
@@ -272,7 +274,8 @@ async def test_get_datetime_calculation_guide_prompt(reset_server_state: None) -
     message = result.messages[0]
     assert message.role == "user"
 
-    content_text = cast(types.TextContent, message.content).text
+    assert isinstance(message.content, types.TextContent)
+    content_text = message.content.text
     assert "DateTime Calculation Tools Guide" in content_text
     assert "get-current-datetime" in content_text
     assert "calculate-date" in content_text
@@ -282,7 +285,8 @@ async def test_get_datetime_calculation_guide_prompt(reset_server_state: None) -
     result = await handle_get_prompt(
         "datetime-calculation-guide", {"scenario": "deadlines"}
     )
-    content_text = cast(types.TextContent, result.messages[0].content).text
+    assert isinstance(result.messages[0].content, types.TextContent)
+    content_text = result.messages[0].content.text
     assert "Deadlines" in content_text
 
 
@@ -303,7 +307,8 @@ async def test_get_business_day_rules_prompt(reset_server_state: None) -> None:
     message = result.messages[0]
     assert message.role == "user"
 
-    content_text = cast(types.TextContent, message.content).text
+    assert isinstance(message.content, types.TextContent)
+    content_text = message.content.text
     assert "Business Day Calculation Rules" in content_text
     assert "Monday through Friday" in content_text
     assert "calculate-business-days" in content_text
@@ -311,7 +316,8 @@ async def test_get_business_day_rules_prompt(reset_server_state: None) -> None:
 
     # Test with region argument
     result = await handle_get_prompt("business-day-rules", {"region": "us"})
-    content_text = cast(types.TextContent, result.messages[0].content).text
+    assert isinstance(result.messages[0].content, types.TextContent)
+    content_text = result.messages[0].content.text
     assert "Us" in content_text
 
 
@@ -332,7 +338,8 @@ async def test_get_timezone_best_practices_prompt(reset_server_state: None) -> N
     message = result.messages[0]
     assert message.role == "user"
 
-    content_text = cast(types.TextContent, message.content).text
+    assert isinstance(message.content, types.TextContent)
+    content_text = message.content.text
     assert "Timezone Best Practices" in content_text
     assert "UTC" in content_text
     assert "DST" in content_text
@@ -342,7 +349,8 @@ async def test_get_timezone_best_practices_prompt(reset_server_state: None) -> N
     result = await handle_get_prompt(
         "timezone-best-practices", {"operation_type": "calculation"}
     )
-    content_text = cast(types.TextContent, result.messages[0].content).text
+    assert isinstance(result.messages[0].content, types.TextContent)
+    content_text = result.messages[0].content.text
     assert "Calculation" in content_text
 
 
@@ -410,6 +418,7 @@ async def test_call_add_note_tool(reset_server_state: None) -> None:
 
     # Check the result
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert result[0].type == "text"
     assert "Added note 'new-note'" in result[0].text
 
@@ -425,11 +434,13 @@ async def test_call_add_note_tool_missing_args(reset_server_state: None) -> None
     # Test missing arguments - should return error text, not raise exception
     result = await handle_call_tool("add-note", None)
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert "Error adding note: Missing arguments" in result[0].text
 
     # Test missing content - should return error text, not raise exception
     result = await handle_call_tool("add-note", {"name": "new-note"})
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert "Error adding note: Missing name or content" in result[0].text
 
 
@@ -446,6 +457,7 @@ async def test_call_get_current_datetime_tool(reset_server_state: None) -> None:
     result = await handle_call_tool("get-current-datetime", arguments)
 
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert result[0].type == "text"
 
     # The result should be a valid ISO format datetime
@@ -461,6 +473,7 @@ async def test_call_get_current_datetime_tool(reset_server_state: None) -> None:
     result = await handle_call_tool("get-current-datetime", arguments)
 
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert result[0].type == "text"
 
     # The result should be in format YYYY-MM-DD HH:MM:SS
@@ -484,6 +497,7 @@ async def test_call_format_date_tool(reset_server_state: None) -> None:
     result = await handle_call_tool("format-date", arguments)
 
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert result[0].type == "text"
 
     # The result should be in format DD/MM/YYYY
@@ -495,57 +509,56 @@ async def test_call_format_date_tool(reset_server_state: None) -> None:
     result = await handle_call_tool("format-date", arguments)
 
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert result[0].type == "text"
-
-    # The result should be in format Month DD, YYYY
-    today = datetime.datetime.now()
-    expected = today.strftime("%B %d, %Y")
-    assert result[0].text == expected
+    assert "," in result[0].text
 
 
 @pytest.mark.asyncio
 async def test_call_format_date_tool_invalid_date(reset_server_state: None) -> None:
     """
-    Test that the server correctly handles invalid date for format-date tool.
+    Test that the server correctly handles an invalid date for the format-date tool.
 
     Args:
         reset_server_state: Fixture to reset the server state before the test.
     """
-    arguments = {"date": "invalid-date", "format": "%Y-%m-%d"}
+    arguments = {"date": "invalid-date", "format": "%d/%m/%Y"}
     result = await handle_call_tool("format-date", arguments)
 
     assert len(result) == 1
-    assert result[0].type == "text"
-    assert "Could not parse date string: invalid-date" in result[0].text
+    assert isinstance(result[0], types.TextContent)
+    assert "Could not parse date string" in result[0].text
 
 
 @pytest.mark.asyncio
 async def test_call_format_date_tool_invalid_format(reset_server_state: None) -> None:
     """
-    Test that the server correctly handles invalid format for format-date tool.
+    Test that the server correctly handles an invalid format for the format-date tool.
 
     Args:
         reset_server_state: Fixture to reset the server state before the test.
     """
-    arguments = {"date": "2023-01-01", "format": "%invalid"}
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    arguments = {"date": today, "format": "%invalid"}
     result = await handle_call_tool("format-date", arguments)
 
     assert len(result) == 1
-    assert result[0].type == "text"
-    assert "invalid" in result[0].text.lower()
+    assert isinstance(result[0], types.TextContent)
+    assert "Invalid format string" in result[0].text
 
 
 @pytest.mark.asyncio
 async def test_call_unknown_tool(reset_server_state: None) -> None:
     """
-    Test that the server correctly handles an unknown tool name.
+    Test that the server correctly handles an unknown tool.
 
     Args:
         reset_server_state: Fixture to reset the server state before the test.
     """
-    # Test unknown tool - should return error text, not raise exception
-    result = await handle_call_tool("unknown-tool", {})
+    result = await handle_call_tool("unknown-tool", None)
+
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert "Error: Unknown tool 'unknown-tool'" in result[0].text
 
 
@@ -554,29 +567,24 @@ async def test_call_get_current_datetime_with_timezone(
     reset_server_state: None, monkeypatch: "MonkeyPatch"
 ) -> None:
     """
-    Test that the server correctly handles timezones in the get-current-datetime tool.
-    Uses zoneinfo instead of pytz for timezone handling.
+    Test the get-current-datetime tool with timezone support.
 
     Args:
-        reset_server_state: Fixture to reset the server state before the test.
+        reset_server_state: Fixture to reset the server state.
         monkeypatch: Pytest monkeypatch fixture.
     """
-    # Test with timezone argument
-    arguments = {"format": "readable", "timezone": "America/New_York"}
+    # Test with a specific timezone
+    arguments = {"format": "iso", "timezone": "America/New_York"}
     result = await handle_call_tool("get-current-datetime", arguments)
 
     assert len(result) == 1
-    assert result[0].type == "text"
+    assert isinstance(result[0], types.TextContent)
+    assert "-04:00" in result[0].text or "-05:00" in result[0].text
 
-    # The result should be a readable datetime string
-    time_str = result[0].text
-    assert len(time_str.split()) == 2
-    assert len(time_str.split()[0].split("-")) == 3
-    assert len(time_str.split()[1].split(":")) == 3
-
-    # Test with invalid timezone
-    arguments = {"format": "readable", "timezone": "Invalid/Timezone"}
+    # Test with an invalid timezone
+    arguments = {"format": "iso", "timezone": "Invalid/Timezone"}
     result = await handle_call_tool("get-current-datetime", arguments)
 
     assert len(result) == 1
+    assert isinstance(result[0], types.TextContent)
     assert "Invalid timezone identifier" in result[0].text

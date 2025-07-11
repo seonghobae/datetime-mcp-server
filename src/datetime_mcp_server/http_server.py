@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+from mcp.types import TextContent
 
 # Use uvloop for better performance on Unix systems
 if platform.system() != "Windows":
@@ -228,6 +229,7 @@ def create_app() -> FastAPI:
                 metrics["max_concurrent_requests"] = metrics["concurrent_requests"]
 
         endpoint = request.url.path
+        is_error = False  # Initialize is_error
 
         try:
             response = await call_next(request)
@@ -397,7 +399,12 @@ async def mcp_endpoint(request: Request):
                     "messages": [
                         {
                             "role": "user",
-                            "content": {"type": "text", "text": msg.content.text},
+                            "content": {
+                                "type": "text",
+                                "text": msg.content.text
+                                if isinstance(msg.content, TextContent)
+                                else "",
+                            },
                         }
                         for msg in prompt_result.messages
                     ]
@@ -413,7 +420,12 @@ async def mcp_endpoint(request: Request):
                 tool_result = await handle_call_tool(name, arguments)
                 result = {
                     "content": [
-                        {"type": "text", "text": content.text}
+                        {
+                            "type": "text",
+                            "text": content.text
+                            if isinstance(content, TextContent)
+                            else "",
+                        }
                         for content in tool_result
                     ]
                 }
@@ -583,7 +595,7 @@ async def root():
 def create_hypercorn_config(
     host: str = "0.0.0.0",
     port: int = 8000,
-    workers: int = None,
+    workers: int | None = None,
     log_level: str = "info",
     reload: bool = False,
 ) -> Config:
@@ -592,38 +604,31 @@ def create_hypercorn_config(
 
     # Basic settings
     config.bind = [f"{host}:{port}"]
-    config.log_level = log_level.upper()
+    config.loglevel = log_level.lower()
 
     # Performance optimizations
-    config.worker_class = "trio"  # Use trio for better async performance
-    config.workers = workers or max(
-        1, (os.cpu_count() or 1) // 2
-    )  # Conservative worker count
-    config.threads = 2  # Enable threading support
-    config.max_requests = 1000  # Restart workers after handling 1000 requests
-    config.max_requests_jitter = 100  # Add jitter to max_requests
+    config.worker_class = "uvloop" if platform.system() != "Windows" else "asyncio"
+    config.workers = workers or max(1, (os.cpu_count() or 1) // 2)
+    config.max_requests = 1000
+    config.max_requests_jitter = 100
 
     # HTTP/2 and HTTP/3 support
-    config.protocols = ["h2", "http/1.1"]  # Enable HTTP/2
+    config.alpn_protocols = ["h2", "http/1.1"]
 
     # Connection settings
     config.keep_alive_timeout = 65
     config.graceful_timeout = 30
-    config.max_incomplete_event_size = 16384
-
-    # SSL/TLS (can be configured later)
-    # config.certfile = "path/to/cert.pem"
-    # config.keyfile = "path/to/key.pem"
+    config.h11_max_incomplete_size = 16384
 
     # Development settings
     if reload:
         config.use_reloader = True
-        config.reload_includes = ["*.py"]
 
     # Logging
     config.access_log_format = (
         '[%(asctime)s] %(h)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
     )
+    config.accesslog = "-"  # Log to stdout
 
     return config
 
@@ -642,7 +647,7 @@ async def shutdown_handler(server_task):
 def run_http_server(
     host: str = "0.0.0.0",
     port: int = 8000,
-    workers: int = None,
+    workers: int | None = None,
     reload: bool = False,
     log_level: str = "info",
 ):
@@ -668,7 +673,7 @@ def run_http_server(
 
         try:
             # Start the server
-            server_task = asyncio.create_task(serve(app, config))
+            server_task = asyncio.create_task(serve(app, config))  # type: ignore
             await server_task
         except asyncio.CancelledError:
             logger.info("Server cancelled")

@@ -1,11 +1,18 @@
 import asyncio
-from typing import Optional
+from typing import Optional, List, Dict, Any, cast
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from anthropic import Anthropic
+from anthropic.types import (
+    MessageParam,
+    ToolParam,
+    TextBlock,
+    ToolUseBlock,
+    ToolUseBlockParam,
+)
 from dotenv import load_dotenv
 
 load_dotenv()  # load environment variables from .env
@@ -42,6 +49,7 @@ class MCPClient:
             ClientSession(self.stdio, self.write)
         )
 
+        assert self.session is not None
         await self.session.initialize()
 
         # List available tools
@@ -51,57 +59,89 @@ class MCPClient:
 
     async def process_query(self, query: str) -> str:
         """Process a query using Claude and available tools"""
-        messages = [{"role": "user", "content": query}]
+        messages: List[MessageParam] = [{"role": "user", "content": query}]
 
+        assert self.session is not None
         response = await self.session.list_tools()
-        available_tools = [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.inputSchema,
-            }
+        available_tools: List[ToolParam] = [
+            cast(
+                ToolParam,
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.inputSchema or {},
+                },
+            )
             for tool in response.tools
         ]
 
         # Initial Claude API call
         response = self.anthropic.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=1000,
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=4096,
             messages=messages,
             tools=available_tools,
         )
 
         # Process response and handle tool calls
-        tool_results = []
-        final_text = []
+        tool_results: List[Dict[str, Any]] = []
+        final_text_parts: List[str] = []
+        assistant_content_blocks: List[TextBlock | ToolUseBlockParam] = []
 
         for content in response.content:
-            if content.type == "text":
-                final_text.append(content.text)
-            elif content.type == "tool_use":
+            if isinstance(content, TextBlock):
+                final_text_parts.append(content.text)
+                assistant_content_blocks.append(content)
+            elif isinstance(content, ToolUseBlock):
                 tool_name = content.name
                 tool_args = content.input
+                final_text_parts.append(
+                    f"[Calling tool {tool_name} with args {tool_args}]"
+                )
+                assistant_content_blocks.append(cast(ToolUseBlockParam, content.dict()))
 
                 # Execute tool call
-                result = await self.session.call_tool(tool_name, tool_args)
-                tool_results.append({"call": tool_name, "result": result})
-                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
-
-                # Continue conversation with tool results
-                if hasattr(content, "text") and content.text:
-                    messages.append({"role": "assistant", "content": content.text})
-                messages.append({"role": "user", "content": result.content})
-
-                # Get next response from Claude
-                response = self.anthropic.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1000,
-                    messages=messages,
+                assert self.session is not None
+                result = await self.session.call_tool(tool_name, cast(dict, tool_args))
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": content.id,
+                        "content": result.content,
+                    }
                 )
 
-                final_text.append(response.content[0].text)
+        if assistant_content_blocks:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_content_blocks,
+                }
+            )
 
-        return "\n".join(final_text)
+        if tool_results:
+            messages.append(
+                cast(
+                    MessageParam,
+                    {
+                        "role": "user",
+                        "content": tool_results,
+                    },
+                )
+            )
+
+            # Get next response from Claude
+            response = self.anthropic.messages.create(
+                model="claude-3-5-sonnet-20240620",
+                max_tokens=4096,
+                messages=messages,
+            )
+
+            for content in response.content:
+                if isinstance(content, TextBlock):
+                    final_text_parts.append(content.text)
+
+        return "\n".join(final_text_parts)
 
     async def chat_loop(self):
         """Run an interactive chat loop"""
