@@ -186,7 +186,52 @@ The server will start and listen on stdin/stdout for MCP protocol messages.
 
 ### Example Use Cases
 
-#### RAG Temporal Query Processing 
+#### Basic DateTime Operations
+```bash
+# Get current date
+uv run mcp tools call get-current-datetime --arguments '{"format": "iso", "timezone": "UTC"}'
+
+# Calculate future date (3 months from now)
+uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "add", "amount": 3, "unit": "months"}'
+
+# Calculate past date (2 weeks ago)
+uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "subtract", "amount": 2, "unit": "weeks"}'
+
+# Format dates for presentation
+uv run mcp tools call format-date --arguments '{"date": "2024-07-15", "format": "%B %d, %Y"}'
+```
+
+#### Date Range Calculations
+```bash
+# Get "last quarter" date range
+uv run mcp tools call calculate-date-range --arguments '{"base_date": "2024-07-15", "direction": "last", "amount": 3, "unit": "months"}'
+
+# Get "next 2 weeks" date range
+uv run mcp tools call calculate-date-range --arguments '{"base_date": "2024-07-15", "direction": "next", "amount": 2, "unit": "weeks"}'
+```
+
+#### Business Day Calculations
+```bash
+# Count business days for a project
+uv run mcp tools call calculate-business-days --arguments '{"start_date": "2024-07-15", "end_date": "2024-10-15", "holidays": ["2024-09-02"]}'
+
+# Calculate business days excluding weekends and holidays
+uv run mcp tools call calculate-business-days --arguments '{"start_date": "2024-12-20", "end_date": "2024-12-31", "holidays": ["2024-12-25"]}'
+```
+
+#### Timezone Operations
+```bash
+# Get current time in multiple timezones
+uv run mcp tools call get-current-datetime --arguments '{"format": "json", "timezone": "Asia/Tokyo"}'
+
+# Get timezone information
+uv run mcp resources read datetime://timezone-info
+
+# List all supported timezones
+uv run mcp resources read datetime://supported-timezones
+```
+
+#### Advanced: RAG Temporal Query Processing
 ```bash
 # User asks: "What happened yesterday?"
 # LLM workflow:
@@ -203,7 +248,7 @@ yesterday=$(uv run mcp tools call calculate-date --arguments '{"base_date": "202
 # search_documents(date_filter="2024-07-14")
 ```
 
-#### RAG Date Range Queries
+#### Advanced: RAG Date Range Queries
 ```bash
 # User asks: "Show me reports from last quarter"
 # LLM workflow:
@@ -219,7 +264,7 @@ quarter_range=$(uv run mcp tools call calculate-date-range --arguments '{"base_d
 # search_documents(start_date="2024-04-15", end_date="2024-07-15", content_type="reports")
 ```
 
-#### Business Day Calculations for RAG
+#### Advanced: Business Day Calculations for RAG
 ```bash
 # User asks: "What happened in the last 10 business days?"
 # LLM workflow:
@@ -237,36 +282,6 @@ business_days=$(uv run mcp tools call calculate-business-days --arguments '{"sta
 
 # 4. RAG search with business-day-aware filtering
 # search_documents(date_range="business_days", start="2024-07-01", end="2024-07-15")
-```
-
-#### Project Planning
-```bash
-# Get current date
-uv run mcp tools call get-current-datetime --arguments '{"format": "iso", "timezone": "UTC"}'
-
-# Calculate project deadline (3 months from now)
-uv run mcp tools call calculate-date --arguments '{"base_date": "2024-07-15", "operation": "add", "amount": 3, "unit": "months"}'
-
-# Count business days for the project
-uv run mcp tools call calculate-business-days --arguments '{"start_date": "2024-07-15", "end_date": "2024-10-15", "holidays": ["2024-09-02"]}'
-```
-
-#### Reporting Periods
-```bash
-# Get "last quarter" date range
-uv run mcp tools call calculate-date-range --arguments '{"base_date": "2024-07-15", "direction": "last", "amount": 3, "unit": "months"}'
-
-# Format dates for presentation
-uv run mcp tools call format-date --arguments '{"date": "2024-07-15", "format": "%B %d, %Y"}'
-```
-
-#### Timezone Operations
-```bash
-# Get current time in multiple timezones
-uv run mcp tools call get-current-datetime --arguments '{"format": "json", "timezone": "Asia/Tokyo"}'
-
-# List all supported timezones
-uv run mcp resources read datetime://supported-timezones
 ```
 
 ## Development
