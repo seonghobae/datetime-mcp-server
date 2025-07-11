@@ -1,5 +1,9 @@
 # DateTime MCP Server
 
+[![CI/CD Pipeline](https://github.com/seonghobae/datetime-mcp-server/actions/workflows/ci.yml/badge.svg?branch=bugfix%2Fserver-stability-improvements)](https://github.com/seonghobae/datetime-mcp-server/actions/workflows/ci.yml)
+[![Security Scan](https://github.com/seonghobae/datetime-mcp-server/actions/workflows/security.yml/badge.svg)](https://github.com/seonghobae/datetime-mcp-server/actions/workflows/security.yml)
+[![Release](https://github.com/seonghobae/datetime-mcp-server/actions/workflows/release.yml/badge.svg)](https://github.com/seonghobae/datetime-mcp-server/actions/workflows/release.yml)
+
 A MCP (Model Context Protocol) server that provides datetime functionality along with simple note management.
 
 ## Overview

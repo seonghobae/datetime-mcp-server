@@ -151,9 +151,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v5
         with:
-          version: "0.5.29"
+          version: "0.6.3"
           enable-cache: true
 
       - name: Set up Python
@@ -163,13 +163,40 @@ jobs:
         run: uv sync --frozen
 
       - name: Run ruff linter
-        run: uv run ruff check .
+        run: |
+          echo "🔍 Running ruff linter..."
+          uv run ruff check .
 
       - name: Run ruff formatter check
-        run: uv run ruff format --check .
+        run: |
+          echo "📝 Checking code formatting..."
+          uv run ruff format --check .
+
+      - name: Install type checker
+        run: |
+          echo "📦 Installing pyright for type checking..."
+          uv add --dev pyright
 
       - name: Run pyright type checker
-        run: uv run pyright src/ tests/ || echo "Type checking completed with warnings"
+        run: |
+          echo "🔍 Running type checking..."
+          # For feature branches, allow warnings but fail on errors
+          if [[ "${{ needs.detect-config.outputs.is_feature_branch }}" == "true" ]]; then
+            uv run pyright src/ tests/ || echo "⚠️ Type checking completed with warnings on feature branch"
+          else
+            # For main/release branches, enforce stricter type checking
+            echo "🎯 Strict type checking for main/release branch"
+            uv run pyright src/ tests/
+          fi
+
+      - name: Lint and type check summary
+        if: always()
+        run: |
+          echo "✅ Lint and type check job completed"
+          echo "📊 Summary:"
+          echo "  - Ruff linting: ${{ job.status }}"
+          echo "  - Code formatting: ${{ job.status }}"
+          echo "  - Type checking: ${{ job.status }}"
 
   test:
     name: Test Suite
